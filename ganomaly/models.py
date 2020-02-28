@@ -1,26 +1,14 @@
 import tensorflow as tf
 from .layers import WeightedSum, PixelNormalization, MinibatchStdev
 from tensorflow.keras.constraints import MinMaxNorm
-
-
-def create_networks(z_dim, limit):
-    G = build_generator(z_dim)
-    D = build_descriminator(model_type='discriminator', limit=z_dim)
-    E = build_descriminator(model_type='encoder', limit=z_dim)
-    return G, D, E
-
-def grow_networks(G, D, E, limit=512):
-    G_new, G_fade = upsample_generator(G, limit=limit)
-    D_new, D_fade = grow_discriminator(D, limit=limit)
-    E_new, E_fade = grow_discriminator(E, limit=limit)
-
-    return G_new, G_fade, D_new, D_fade, E_new, E_fade
+import numpy as np
 
 def lerp_clip(a, b, t): return a + (b - a) * tf.clip_by_value(tf.cast(t, dtype='float32'), 0.0, 1.0)
 
 # ==============================================================================
 # =                                  generator                                 =
 # ==============================================================================
+
 def build_generator(z_dim,
                     resolution=32,
                     lod_in=0,
@@ -103,104 +91,65 @@ def build_generator(z_dim,
 # =                                  discriminator                             =
 # ==============================================================================
 
-def build_descriminator(model_type='discriminator', limit=1024):
-    """
-    Build a 4x4 discriminator
+def build_discriminator(z_dim, resolution=32, model_type='discriminator', lod_in=0,
+                    FEATURE_SIZE = {'1024': 16, '512': 32, '256': 64, '128': 128, '64': 256, '32': 512, '16': 512, '8': 512, '4': 512}
+                    ):
 
-    :param limit:
-    :return:
-    """
-    image_in = tf.keras.Input(shape=[4, 4, 3], name='image_in')
-    # from RGB
-    model = tf.keras.layers.Conv2D(limit, 1,
-                                   padding='same',
+    resolution_log2 = int(np.log2(resolution))  # number of log2's
+    assert resolution == 2 ** resolution_log2 and resolution >= 4
+    img = tf.keras.Input(shape=(resolution, resolution, 3), name='img')
+
+    # Building blocks.
+    def fromrgb(x, res):  # res = 2..resolution_log2
+        x = tf.keras.layers.Conv2D(1, 1, padding='same',
                                    kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
                                    activation=None,
-                                   use_bias=False)(image_in)
-    model = tf.keras.layers.LeakyReLU(alpha=0.2)(model)
-    model = MinibatchStdev()(model)
+                                   use_bias=True,
+                                   name='from_RGB_' + str(2 ** res) + 'x' + str(2 ** res))(x)
+        return x
 
-    # conv 4x4
-    model = tf.keras.layers.Conv2D(limit, 4, padding='same',
-                                   kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                                   activation=None,
-                                   use_bias=False)(model)
-    model = tf.keras.layers.LeakyReLU(alpha=0.2)(model)
-    model = MinibatchStdev()(model)
+    def block(x, res, model_type=model_type, z_dim=z_dim):  # res = 2..resolution_log2
+        limit = FEATURE_SIZE[str(2 ** res)]
+        if res >= 3:  # 8x8 and up
+            x = tf.keras.layers.Conv2D(limit, 3, padding='same',
+                                           kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
+                                           activation=None,
+                                           use_bias=False)(x)
+            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+            x = tf.keras.layers.Conv2D(limit, 3, padding='same',
+                                          kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
+                                          activation=None,
+                                          use_bias=False)(x)
+            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+            x = tf.keras.layers.AveragePooling2D()(x)
+        else:  # 4x4
+            x = tf.keras.layers.Conv2D(limit, 3, padding='same',
+                                           kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
+                                           activation=None,
+                                           use_bias=False,
+                                            name='d_Conv0_' + str(2**res) + 'x' + str(2**res))(x)
+            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
 
-    # conv 3x3
-    model = tf.keras.layers.Conv2D(limit, 3, padding='same',
-                                   kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                                   activation=None,
-                                   use_bias=False)(model)
-    model = tf.keras.layers.LeakyReLU(alpha=0.2)(model)
-    model = MinibatchStdev()(model)
+            x = MinibatchStdev()(x)
+            x = tf.keras.layers.Flatten()(x)
+            x = tf.keras.layers.Dense(z_dim)(x)
+            if model_type == 'discriminator':
+                x = tf.keras.layers.Dense(1)(x)
+        return x
+    img_ = img
+    x = fromrgb(img_, resolution_log2)
+    for res in range(resolution_log2, 2, -1):
+        lod = resolution_log2 - res
+        x = block(x, res)
+        img_ = tf.nn.avg_pool(img_, ksize=2, strides=2, padding='VALID')
+        y = fromrgb(img_, res - 1)
+        x = lerp_clip(x, y, lod_in - lod)
+    combo_out = block(x, 2)
 
-    model = tf.keras.layers.Flatten()(model)
     if model_type == 'discriminator':
-        prediction = tf.keras.layers.Dense(1)(model)
+        scores_out = tf.identity(combo_out[:, :1], name='scores_out')
+        labels_out = tf.identity(combo_out[:, 1:], name='labels_out')
+        model = tf.keras.Model(img, [scores_out, labels_out])
     else:
-        prediction = tf.keras.layers.Dense(z_dim)(model)
-    discriminator = tf.keras.Model(image_in, prediction)
-
-    return discriminator  # Y or z_hat
-
-
-def grow_discriminator(initial_model, limit=512):
-
-new_input_shape = (initial_model.input.shape[-2]*2, initial_model.input.shape[-2]*2, 3)
-in_image = tf.keras.Input(shape=new_input_shape, name='image_in_' + str(new_input_shape[0]))
-
-# conv 3x3
-model = tf.keras.layers.Conv2D(limit, 3, padding='same',
-                               kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                               activation=None,
-                               use_bias=False)(in_image)
-model = tf.keras.layers.LeakyReLU(alpha=0.2)(model)
-model = MinibatchStdev()(model)
-# conv 3x3
-model = tf.keras.layers.Conv2D(limit, 3, padding='same',
-                               kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                               activation=None,
-                               use_bias=False)(model)
-model = tf.keras.layers.LeakyReLU(alpha=0.2)(model)
-model = MinibatchStdev()(model)
-
-# Fading
-fade_model = tf.keras.layers.Conv2D(limit, 3, padding='same',
-                           kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                           activation=None,
-                           use_bias=False)(in_image)
-fade_model = MinibatchStdev()(fade_model)
-
-fade_model = WeightedSum()([model, fade_model])
-####################################################
-# Need to somehow not loose the 4x4 when I go to 8x8
-####################################################
-#  rather than stopping at Fade model, I need to add initial_model
-#
-####################################################
-full_model = tf.keras.Model(in_image, model)
-full_input = tf.keras.Input(shape=full_model.input_shape[1:])
-tf.keras.Model(full_model, model)
-fade_model = tf.keras.Model(in_image, fade_model)
-
-    #only tack on the bottom of the predictor
-    if new_input_shape[-2] == 4:
-        # new out
-        if model_type == 'discriminator':
-            prediction = tf.keras.layers.Dense(1)(model)
-        else:
-            prediction = tf.keras.layers.Dense(z_dim)(model)
-        discriminator_new = tf.keras.Model(in_latents, prediction)
-
-        # fade out
-        if model_type == 'discriminator':
-            prediction = tf.keras.layers.Dense(1)(fade_model)
-        else:
-            prediction = tf.keras.layers.Dense(z_dim)(fade_model)
-        discriminator_fade = tf.keras.Model(in_latents, prediction)
-
-        return discriminator_new, discriminator_fade
-
-    return full_model, fade_model
+        model = tf.keras.Model(img,combo_out)
+    return model

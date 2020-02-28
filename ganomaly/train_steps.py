@@ -1,3 +1,4 @@
+import tensorflow as tf
 
 @tf.function
 def train_step(images,
@@ -9,7 +10,7 @@ def train_step(images,
 	with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape, tf.GradientTape() as enc_tape:
 		x_fake = G(z, training=True)
 		x_fake_d_logit = D(x_fake, training=True)
-		x_real_d_logit = D(x_real, training=True)
+		x_real_d_logit = D(images, training=True)
 		x_fake_g_img = G(x_fake_d_logit, training=True)
 
 		G_loss = g_loss_fn(x_fake_d_logit)
