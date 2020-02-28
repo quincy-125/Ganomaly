@@ -1,155 +1,196 @@
-import tensorflow as tf
 from .layers import WeightedSum, PixelNormalization, MinibatchStdev
+from .losses import generator_loss, discriminator_loss, encoder_loss
+import tensorflow as tf
 from tensorflow.keras.constraints import MinMaxNorm
-import numpy as np
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import Reshape
+from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import UpSampling2D
+from tensorflow.keras.layers import AveragePooling2D
+from tensorflow.keras.layers import LeakyReLU
+from tensorflow.keras.initializers import RandomNormal
 
-def lerp_clip(a, b, t): return a + (b - a) * tf.clip_by_value(tf.cast(t, dtype='float32'), 0.0, 1.0)
 
-# ==============================================================================
-# =                                  generator                                 =
-# ==============================================================================
+# add a discriminator block
+def add_discriminator_block(old_model, n_input_layers=3, loss_fn=None):
+    # weight initialization
+    init = RandomNormal(stddev=0.02)
+    # weight constraint
+    const = MinMaxNorm(min_value=-1.0, max_value=1.0)
+    # get shape of existing model
+    in_shape = list(old_model.input.shape)
+    # define new input shape as double the size
+    input_shape = (in_shape[-2] * 2, in_shape[-2] * 2, in_shape[-1])
+    in_image = Input(shape=input_shape)
+    # define new input processing layer
+    d = Conv2D(128, (1, 1), padding='same', kernel_initializer=init, kernel_constraint=const)(in_image)
+    d = LeakyReLU(alpha=0.2)(d)
+    # define new block
+    d = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
+    d = LeakyReLU(alpha=0.2)(d)
+    d = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
+    d = LeakyReLU(alpha=0.2)(d)
+    d = AveragePooling2D()(d)
+    block_new = d
+    # skip the input, 1x1 and activation for the old model
+    for i in range(n_input_layers, len(old_model.layers)):
+        d = old_model.layers[i](d)
+    # define straight-through model
+    model1 = Model(in_image, d)
+    # compile model
+    model1.compile(loss=loss_fn, optimizer=Adam(lr=0.001, beta_1=0, beta_2=0.99, epsilon=10e-8))
+    # downsample the new larger image
+    downsample = AveragePooling2D()(in_image)
+    # connect old input processing to downsampled new input
+    block_old = old_model.layers[1](downsample)
+    block_old = old_model.layers[2](block_old)
+    # fade in output of old model input layer with new input
+    d = WeightedSum()([block_old, block_new])
+    # skip the input, 1x1 and activation for the old model
+    for i in range(n_input_layers, len(old_model.layers)):
+        d = old_model.layers[i](d)
+    # define straight-through model
+    model2 = Model(in_image, d)
+    # compile model
+    model2.compile(loss=loss_fn, optimizer=Adam(lr=0.001, beta_1=0, beta_2=0.99, epsilon=10e-8))
+    return [model1, model2]
 
-def build_generator(z_dim,
-                    resolution=32,
-                    lod_in=0,
-                    FEATURE_SIZE = {'1024': 16, '512': 32, '256': 64, '128': 128, '64': 256, '32': 512, '16': 512, '8':512, '4': 512}
-                    ):
-    """
-	Build a 4x4 generator from a z_dim vector
 
-	:param z_dim: latent vector size
-	:param resolution: Output resolution
-	:param lod_in: lod initial resolution
-	:return: tensor graph of model before adding RGB
-	"""
-    resolution_log2 = int(np.log2(resolution))  # number of log2's
-    assert resolution == 2 ** resolution_log2 and resolution >= 4
-
-    in_latents = tf.keras.Input(shape=z_dim, name='z')
-
-    # Building blocks.
-    def block(in_latents, res):  # res = 2..resolution_log2
-        limit = FEATURE_SIZE[str(2 ** res)]
-        if res == 2:  # 4x4
-            x = PixelNormalization()(in_latents)
-            # Dense
-            x = tf.keras.layers.Dense(limit * 4 * 4, name='4x4/Dense')(x)
-            x = tf.reshape(x, (-1, 4, 4, limit))
-            # Conv
-            x = tf.keras.layers.Conv2D(limit, 3, padding='same',
-                                           kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                                           activation=None,
-                                           use_bias=False)(x)
-            x = PixelNormalization()(x)
-            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
-
-        else:  # 8x8 and up
-            x = tf.keras.layers.UpSampling2D(2)(in_latents)
-            # conv 3x3
-            x = tf.keras.layers.Conv2D(limit, 3, padding='same',
-                                           kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                                           activation=None,
-                                           use_bias=False,
-                                       name='Conv0_' + str(2**res) + 'x' + str(2**res))(x)
-            x = PixelNormalization()(x)
-            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
-            # conv 3x3
-            x = tf.keras.layers.Conv2D(limit, 3, padding='same',
-                                           kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                                           activation=None,
-                                           use_bias=False,
-                                       name='Conv1_' + str(2**res) + 'x' + str(2**res))(x)
-            x = PixelNormalization()(x)
-            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
-
-        return x
-
-    def torgb(x, res):  # res = 2..resolution_log2
-
-        x = tf.keras.layers.Conv2D(3, 3, padding='same',
-                                       kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                                       activation=None,
-                                       use_bias=True,
-                                name='RGB_' + str(2**res) + 'x' + str(2**res))(x)
-        return x
-
-    x = block(in_latents, 2)
-    images_out = torgb(x, 2)
-
-    for res in range(3, resolution_log2 + 1):
-        lod = resolution_log2 - res
-        x = block(x, res)
-        img = torgb(x, res)
-        images_out = tf.keras.layers.UpSampling2D(2)(images_out)
-        images_out = lerp_clip(img, images_out, lod_in - lod)
-
-    images_out = tf.identity(images_out, name='images_out')
-    model = tf.keras.Model(in_latents, images_out)
-    return model
-
-# ==============================================================================
-# =                                  discriminator                             =
-# ==============================================================================
-
-def build_discriminator(z_dim, resolution=32, model_type='discriminator', lod_in=0,
-                    FEATURE_SIZE = {'1024': 16, '512': 32, '256': 64, '128': 128, '64': 256, '32': 512, '16': 512, '8': 512, '4': 512}
-                    ):
-
-    resolution_log2 = int(np.log2(resolution))  # number of log2's
-    assert resolution == 2 ** resolution_log2 and resolution >= 4
-    img = tf.keras.Input(shape=(resolution, resolution, 3), name='img')
-
-    # Building blocks.
-    def fromrgb(x, res):  # res = 2..resolution_log2
-        x = tf.keras.layers.Conv2D(1, 1, padding='same',
-                                   kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                                   activation=None,
-                                   use_bias=True,
-                                   name='from_RGB_' + str(2 ** res) + 'x' + str(2 ** res))(x)
-        return x
-
-    def block(x, res, model_type=model_type, z_dim=z_dim):  # res = 2..resolution_log2
-        limit = FEATURE_SIZE[str(2 ** res)]
-        if res >= 3:  # 8x8 and up
-            x = tf.keras.layers.Conv2D(limit, 3, padding='same',
-                                           kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                                           activation=None,
-                                           use_bias=False)(x)
-            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
-            x = tf.keras.layers.Conv2D(limit, 3, padding='same',
-                                          kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                                          activation=None,
-                                          use_bias=False)(x)
-            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
-            x = tf.keras.layers.AveragePooling2D()(x)
-        else:  # 4x4
-            x = tf.keras.layers.Conv2D(limit, 3, padding='same',
-                                           kernel_constraint=MinMaxNorm(min_value=-1., max_value=1.),
-                                           activation=None,
-                                           use_bias=False,
-                                            name='d_Conv0_' + str(2**res) + 'x' + str(2**res))(x)
-            x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
-
-            x = MinibatchStdev()(x)
-            x = tf.keras.layers.Flatten()(x)
-            x = tf.keras.layers.Dense(z_dim)(x)
-            if model_type == 'discriminator':
-                x = tf.keras.layers.Dense(1)(x)
-        return x
-    img_ = img
-    x = fromrgb(img_, resolution_log2)
-    for res in range(resolution_log2, 2, -1):
-        lod = resolution_log2 - res
-        x = block(x, res)
-        img_ = tf.nn.avg_pool(img_, ksize=2, strides=2, padding='VALID')
-        y = fromrgb(img_, res - 1)
-        x = lerp_clip(x, y, lod_in - lod)
-    combo_out = block(x, 2)
-
+# define the discriminator models for each image resolution
+def define_discriminator(n_blocks, input_shape=(4, 4, 3), model_type='discriminator', loss_fn=None):
+    # weight initialization
+    init = RandomNormal(stddev=0.02)
+    # weight constraint
+    const = MinMaxNorm(min_value=-1.0, max_value=1.0)
+    model_list = list()
+    # base model input
+    in_image = Input(shape=input_shape)
+    # conv 1x1
+    d = Conv2D(128, (1, 1), padding='same', kernel_initializer=init, kernel_constraint=const)(in_image)
+    d = LeakyReLU(alpha=0.2)(d)
+    # conv 3x3 (output block)
+    d = MinibatchStdev()(d)
+    d = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
+    d = LeakyReLU(alpha=0.2)(d)
+    # conv 4x4
+    d = Conv2D(128, (4, 4), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
+    d = LeakyReLU(alpha=0.2)(d)
+    # dense output layer
+    d = Flatten()(d)
     if model_type == 'discriminator':
-        scores_out = tf.identity(combo_out[:, :1], name='scores_out')
-        labels_out = tf.identity(combo_out[:, 1:], name='labels_out')
-        model = tf.keras.Model(img, [scores_out, labels_out])
+        out_class = Dense(1)(d)
     else:
-        model = tf.keras.Model(img,combo_out)
-    return model
+        out_class = Dense(512)(d)
+    # define model
+    model = Model(in_image, out_class)
+    # compile model
+    model.compile(loss=loss_fn, optimizer=Adam(lr=0.001, beta_1=0, beta_2=0.99, epsilon=10e-8))
+    # store model
+    model_list.append([model, model])
+    # create submodels
+    for i in range(1, n_blocks):
+        # get prior model without the fade-on
+        old_model = model_list[i - 1][0]
+        # create new model for next resolution
+        models = add_discriminator_block(old_model, loss_fn=loss_fn)
+        # store model
+        model_list.append(models)
+    return model_list
+
+# add a generator block
+def add_generator_block(old_model):
+    # weight initialization
+    init = RandomNormal(stddev=0.02)
+    # weight constraint
+    const = MinMaxNorm(min_value=-1.0, max_value=1.0)
+    # get the end of the last block
+    block_end = old_model.layers[-2].output
+    # upsample, and define new block
+    upsampling = UpSampling2D()(block_end)
+    g = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(upsampling)
+    g = PixelNormalization()(g)
+    g = LeakyReLU(alpha=0.2)(g)
+    g = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
+    g = PixelNormalization()(g)
+    g = LeakyReLU(alpha=0.2)(g)
+    # add new output layer
+    out_image = Conv2D(3, (1, 1), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
+    # define model
+    model1 = Model(old_model.input, out_image)
+    # get the output layer from old model
+    out_old = old_model.layers[-1]
+    # connect the upsampling to the old output layer
+    out_image2 = out_old(upsampling)
+    # define new output image as the weighted sum of the old and new models
+    merged = WeightedSum()([out_image2, out_image])
+    # define model
+    model2 = Model(old_model.input, merged)
+    return [model1, model2]
+
+
+# define generator models
+def define_generator(latent_dim, n_blocks, in_dim=4):
+    # weight initialization
+    init = RandomNormal(stddev=0.02)
+    # weight constraint
+    const = MinMaxNorm(min_value=-1.0, max_value=1.0)
+    model_list = list()
+    # base model latent input
+    in_latent = Input(shape=(latent_dim,))
+    # linear scale up to activation maps
+    g = Dense(128 * in_dim * in_dim, kernel_initializer=init, kernel_constraint=const)(in_latent)
+    g = Reshape((in_dim, in_dim, 128))(g)
+    # conv 4x4, input block
+    g = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
+    g = PixelNormalization()(g)
+    g = LeakyReLU(alpha=0.2)(g)
+    # conv 3x3
+    g = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
+    g = PixelNormalization()(g)
+    g = LeakyReLU(alpha=0.2)(g)
+    # conv 1x1, output block
+    out_image = Conv2D(3, (1, 1), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
+    # define model
+    model = Model(in_latent, out_image)
+    # store model
+    model_list.append([model, model])
+    # create submodels
+    for i in range(1, n_blocks):
+        # get prior model without the fade-on
+        old_model = model_list[i - 1][0]
+        # create new model for next resolution
+        models = add_generator_block(old_model)
+        # store model
+        model_list.append(models)
+    return model_list
+
+# calculate wasserstein loss
+def wasserstein_loss(y_true, y_pred):
+	return tf.keras.backend.mean(y_true * y_pred)
+
+# define composite models for training generators via discriminators
+def define_composite_generator(generators, discriminators):
+    model_list = list()
+    # create composite models
+    for i in range(len(discriminators)):
+        g_models, d_models = generators[i], discriminators[i]
+        # straight-through model
+        d_models[0].trainable = False
+        model1 = Sequential()
+        model1.add(g_models[0])
+        model1.add(d_models[0])
+        model1.compile(loss=generator_loss, optimizer=Adam(lr=0.001, beta_1=0, beta_2=0.99, epsilon=10e-8))
+        # fade-in model
+        d_models[1].trainable = False
+        model2 = Sequential()
+        model2.add(g_models[1])
+        model2.add(d_models[1])
+        model2.compile(loss=generator_loss, optimizer=Adam(lr=0.001, beta_1=0, beta_2=0.99, epsilon=10e-8))
+        # store
+        model_list.append([model1, model2])
+    return model_list
