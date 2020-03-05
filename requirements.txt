@@ -1,2 +1,2 @@
+tensorflow>=1.2
 numpy
-tensorflow>=2.0

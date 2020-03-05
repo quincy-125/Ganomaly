@@ -1,13 +1,12 @@
 import tensorflow as tf
 
-# This method returns a helper function to compute cross entropy loss
 cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
 
-def generator_loss(y_true, y_pred):
-    return cross_entropy(tf.ones_like(y_true), y_pred)
+def generator_loss(y_pred):
+    return tf.reduce_mean( y_pred  * 0.9)
 
 def discriminator_loss(x_real_d_logit, x_fake_d_logit):
-    total_loss = x_real_d_logit + x_fake_d_logit + 0.001
+    total_loss = tf.reduce_mean(tf.reduce_mean(tf.abs(x_real_d_logit)) + tf.reduce_mean(tf.abs(x_fake_d_logit)) + 0.001)
     return total_loss
 
 def encoder_loss(fake_images_out, fake_images_reconstructed):
