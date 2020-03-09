@@ -1,12 +1,14 @@
 import tensorflow as tf
 
-cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True, label_smoothing=0.1)
 
 def generator_loss(y_pred):
-    return tf.reduce_mean( y_pred  * 0.9)
+    return 1-y_pred     # If predict real=0.99, then loss would be small
 
-def discriminator_loss(x_real_d_logit, x_fake_d_logit):
-    total_loss = tf.reduce_mean(tf.reduce_mean(tf.abs(x_real_d_logit)) + tf.reduce_mean(tf.abs(x_fake_d_logit)) + 0.001)
+def discriminator_loss(x_real_d_logit, x_fake_d_logit, epsilon=0.0000001):
+    real_loss = cross_entropy(tf.ones_like(x_real_d_logit), x_real_d_logit)
+    fake_loss = cross_entropy(tf.zeros_like(x_fake_d_logit), x_fake_d_logit)
+    total_loss = real_loss - fake_loss + epsilon
     return total_loss
 
 def encoder_loss(fake_images_out, fake_images_reconstructed):

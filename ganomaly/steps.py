@@ -8,6 +8,7 @@ def train_step(images, discriminator, generator, encoder, discriminator_optimize
                encoder_optimizer, batch_size=32, latent_dim=512):
     noise = tf.random.normal([batch_size, latent_dim])
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape, tf.GradientTape() as enc_tape:
+
       generated_images = generator(noise, training=True)
       real_classification = discriminator(images, training=True)
       fake_classification = discriminator(generated_images, training=True)

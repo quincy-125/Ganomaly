@@ -21,7 +21,8 @@ discriminator_optimizer = tf.keras.optimizers.Adam(1e-4)
 encoder_optimizer = tf.keras.optimizers.Adam(1e-4)
 
 for i, images in enumerate(scaled_data):
-    gen_loss, disc_loss, enc_loss = train_step(images, discriminator, generator, encoder,
+    gen_loss, disc_loss, enc_loss = train_step(images,
+                                               discriminator, generator, encoder,
                                                discriminator_optimizer, generator_optimizer, encoder_optimizer,
                                                batch_size=batch_size, latent_dim=latent_dim)
     if i % 100 == 0:
