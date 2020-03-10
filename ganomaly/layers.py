@@ -1,6 +1,6 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Layer, Add
 from tensorflow.keras.backend import concatenate as Concatenate
+from tensorflow.keras.layers import Layer, Add
 
 
 # weighted sum output
@@ -15,11 +15,13 @@ class WeightedSum(Add):
         # only supports a weighted sum of two inputs
         assert (len(inputs) == 2)
         # ((1-a) * input1) + (a * input2)
+        # noinspection PyTypeChecker
         output = ((1.0 - self.alpha) * inputs[0]) + (self.alpha * inputs[1])
         return output
 
 
 # pixel-wise feature vector normalization layer
+# noinspection PyMethodOverriding
 class PixelNormalization(Layer):
     # initialize the layer
     def __init__(self, **kwargs):
@@ -45,6 +47,7 @@ class PixelNormalization(Layer):
 
 
 # mini-batch standard deviation layer
+# noinspection PyMethodOverriding
 class MinibatchStdev(Layer):
     # initialize the layer
     def __init__(self, **kwargs):
