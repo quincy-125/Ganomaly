@@ -8,14 +8,14 @@ class WeightedSum(Add):
     # init with default value
     def __init__(self, alpha=0.0, **kwargs):
         super(WeightedSum, self).__init__(**kwargs)
-        self.alpha = tf.Variable(alpha, name='ws_alpha')
+        self.alpha = tf.Variable(alpha, name='alpha')
 
     # output a weighted sum of inputs
     def _merge_function(self, inputs):
         # only supports a weighted sum of two inputs
         assert (len(inputs) == 2)
         # ((1-a) * input1) + (a * input2)
-        # noinspection PyTypeChecker
+        #print('Local Alpha Layer Value: {}'.format(self.alpha))
         output = ((1.0 - self.alpha) * inputs[0]) + (self.alpha * inputs[1])
         return output
 
