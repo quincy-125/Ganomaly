@@ -22,6 +22,6 @@ def parse_tfrecord_tf(record, size, color_channels=3):
     image = tf.io.decode_raw(features['data'], tf.uint8)
     image = tf.reshape(image, [size, size, color_channels])
     image = tf.cast(image, 'float32')
-    image = (image - 127.5) / 127.5  # normalize to [-1, 1] instead of 0-255
+    image = tf.math.divide(tf.math.subtract(image, 127.5), 127.5)  # normalize to [-1, 1] instead of 0-255
 
     return image

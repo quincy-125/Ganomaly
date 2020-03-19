@@ -1,15 +1,54 @@
 from ganomaly.losses import *
+from ganomaly.models import update_fadein
 import numpy as np
+import os
+from matplotlib import pyplot
+from math import sqrt
 
+def train_step(images, train_dict):
+    """
+    Organize computation of each step
 
-def train_step(images, discriminator, generator, encoder, discriminator_optimizer, generator_optimizer,
-               encoder_optimizer, batch_size=32, latent_dim=512, alpha=0.8):
+    :param images: real image matrix
+    :param train_dict:
+            'generator_optimizer' Optimizer for generator
+            'discriminator_optimizer' Optimizer for discriminator
+            'encoder_optimizer' Optimizer for encoder
+            'generator_full' Generator without fade in
+            'discriminator_full' Discriminator without fade in
+            'encoder_full' Encoder without fade in
+            'generator_fade' Generator with fade in
+            'discriminator_fade' Discriminator with fade in
+            'encoder_fade' Encoder with fade in
+            'num_images_so_far' How many images have been seen for this size
+            'number_of_images_to_fade' Number at which we need to run the full models
+
+    :return:
+    """
+    batch_size = train_dict['batch_size']
+    latent_dim = train_dict['latent_dim']
     noise = tf.random.normal([batch_size, latent_dim])
+
+    generator_optimizer = train_dict['generator_optimizer']
+    discriminator_optimizer = train_dict['discriminator_optimizer']
+    encoder_optimizer = train_dict['encoder_optimizer']
+
+    # Determine whether fading should occur generator/discriminator/encoder
+    if train_dict['num_images_so_far'] > train_dict['number_of_images_to_fade'] and images.shape[1] > 4:
+        generator = train_dict['generator_fade']
+        discriminator = train_dict['discriminator_fade']
+        encoder = train_dict['encoder_fade']
+        update_fadein([generator, discriminator, encoder], alpha=train_dict['alpha'])
+    else:
+        generator = train_dict['generator_full']
+        discriminator = train_dict['discriminator_full']
+        encoder = train_dict['encoder_full']
+
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape, tf.GradientTape() as enc_tape:
+
         generated_images = generator(noise, training=True)
         real_classification = discriminator(images, training=True)
         fake_classification = discriminator(generated_images, training=True)
-
         z_hat = encoder(generated_images, training=True)
         reconstructed_images = generator(z_hat, training=True)
 
@@ -17,7 +56,7 @@ def train_step(images, discriminator, generator, encoder, discriminator_optimize
         disc_loss = discriminator_loss(real_classification, fake_classification)
         enc_loss = encoder_loss(generated_images, reconstructed_images)
 
-    gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
+    gradients_of_generator = gen_tape.gradient(disc_loss, generator.trainable_variables)
     gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
     gradients_of_encoder = enc_tape.gradient(enc_loss, encoder.trainable_variables)
 
@@ -29,17 +68,39 @@ def train_step(images, discriminator, generator, encoder, discriminator_optimize
             'real_classification_histogram': real_classification, 'fake_classification_histogram': fake_classification}
 
 
-def summary_func(writer, i, im_size, result_dict, color_channels=3, max_images=9):
+def summary_func(writer, i, local_step, im_size, result_dict, alpha=0, color_channels=3, max_images=25, result_dir='.'):
+
+    def write_image_file(key_name=None, images=None, dir_name=result_dir, sub_img_size=100):
+        """
+
+        :param sub_img_size: How large should each image subpatch be resized to (for viewing purposes)
+        :return: image_placeholder of size
+        """
+        square = int(sqrt(max_images))
+        for q in range(max_images):
+            pyplot.subplot(square, square, 1 + q)
+            pyplot.axis('off')
+            pyplot.imshow(images[q])
+        # save plot to file
+        fname = [key_name, i, '.png']
+        filename1 = os.path.join(result_dir, '_'.join([str(x) for x in fname]))
+        pyplot.savefig(filename1)
+        pyplot.close()
+
     with writer.as_default():
-        tf.summary.scalar('step', i, step=i)
+        tf.summary.scalar('global_step', i, step=i)
+        tf.summary.scalar('local_step', local_step, step=i)
+        tf.summary.scalar('alpha', alpha, step=i)
         for k in result_dict.keys():
             if k.endswith('loss') or k.endswith('alpha'):
                 tf.summary.scalar(k, result_dict[k], step=i)
             elif k.endswith('images'):
                 images = result_dict[k].numpy()
-                images = ((images + 1) * 255 / 2)
-                images = np.reshape(images, (-1, 2 ** im_size, 2 ** im_size, color_channels))
-                tf.summary.image(k, images.astype(int), step=i, max_outputs=max_images)
+                images = tf.math.divide(tf.math.multiply(tf.math.add(images, 1), 255), 2)
+                images = np.reshape(images, (images.shape[0], im_size, im_size, color_channels))
+                images = images.astype(int)
+                tf.summary.image(k, images, step=i, max_outputs=max_images)
+                write_image_file(k, images[:max_images, :, :, :])
             elif k.endswith('histogram'):
                 tf.summary.histogram(k, result_dict[k], step=i)
 
