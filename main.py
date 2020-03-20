@@ -117,12 +117,11 @@ for lod in range(2, n_blocks):
 
         result_dict = train_step(images, train_dict)
         if i % save_frequency == 0:
-            print('Images seen: {}\t'
-                  'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha: {}'
+            print('\rImages seen: {}\t'
+                  'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha:{:03f}'
                   .format(train_dict['num_images_so_far'],
                           i, global_step, result_dict['gen_loss'], result_dict['disc_loss'], result_dict['enc_loss'],
-                          train_dict['alpha']),
-                  flush=True)
+                          train_dict['alpha']))
             summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
                          color_channels=color_channels, max_images=max_images, result_dir=result_dir)
             checkpoint.save(file_prefix=checkpoint_prefix)
@@ -135,9 +134,8 @@ for lod in range(2, n_blocks):
     summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
                  color_channels=color_channels, max_images=max_images, result_dir=result_dir)
     checkpoint.save(file_prefix=checkpoint_prefix)
-    print('Images seen: {}\t'
-          'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha: {} '
+    print('\rImages seen: {}\t'
+          'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha: {:03f} '
           .format(train_dict['num_images_so_far'],
                   i, global_step, result_dict['gen_loss'], result_dict['disc_loss'], result_dict['enc_loss'],
-                  train_dict['alpha']),
-          flush=True)
+                  train_dict['alpha']))

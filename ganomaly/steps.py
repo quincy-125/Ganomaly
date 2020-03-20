@@ -4,6 +4,7 @@ import numpy as np
 import os
 from matplotlib import pyplot
 from math import sqrt
+from PIL import Image
 
 def train_step(images, train_dict):
     """
@@ -56,7 +57,13 @@ def train_step(images, train_dict):
         disc_loss = discriminator_loss(real_classification, fake_classification)
         enc_loss = encoder_loss(generated_images, reconstructed_images)
 
-    gradients_of_generator = gen_tape.gradient(disc_loss, generator.trainable_variables)
+    tf.print('\rgen_loss: {:06f}'.format(gen_loss), end='\t')
+    tf.print('disc_loss: {:06f}'.format(disc_loss), end='\t')
+    tf.print('Avg_Fake_Score: {:06f}'.format(tf.reduce_mean(fake_classification)), end='\t')
+    tf.print('Avg_Real_Score: {:06f}'.format(tf.reduce_mean(real_classification)), end='\t')
+    tf.print('enc_loss: {:06f}'.format(enc_loss), end='\t')
+
+    gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
     gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
     gradients_of_encoder = enc_tape.gradient(enc_loss, encoder.trainable_variables)
 
@@ -70,20 +77,18 @@ def train_step(images, train_dict):
 
 def summary_func(writer, i, local_step, im_size, result_dict, alpha=0, color_channels=3, max_images=25, result_dir='.'):
 
-    def write_image_file(key_name=None, images=None, dir_name=result_dir, sub_img_size=100):
-        """
-
-        :param sub_img_size: How large should each image subpatch be resized to (for viewing purposes)
-        :return: image_placeholder of size
-        """
+    def write_image_file(key_name=None, images=None, sub_img_size=800):
         square = int(sqrt(max_images))
         for q in range(max_images):
             pyplot.subplot(square, square, 1 + q)
             pyplot.axis('off')
-            pyplot.imshow(images[q])
+            img = Image.fromarray(np.uint8(images[q])).resize((sub_img_size,sub_img_size))
+            pyplot.imshow(img)
         # save plot to file
-        fname = [key_name, i, '.png']
-        filename1 = os.path.join(result_dir, '_'.join([str(x) for x in fname]))
+        fname = ['step_' + str(i), str(im_size) + 'x' + str(im_size), 'img.png']
+        if not os.path.exists(os.path.join(result_dir, key_name)):
+            os.makedirs(os.path.join(result_dir, key_name))
+        filename1 = os.path.join(result_dir, key_name, '_'.join([str(x) for x in fname]))
         pyplot.savefig(filename1)
         pyplot.close()
 
@@ -100,7 +105,12 @@ def summary_func(writer, i, local_step, im_size, result_dict, alpha=0, color_cha
                 images = np.reshape(images, (images.shape[0], im_size, im_size, color_channels))
                 images = images.astype(int)
                 tf.summary.image(k, images, step=i, max_outputs=max_images)
-                write_image_file(k, images[:max_images, :, :, :])
+                if images.shape[0] > max_images:
+                    images = images[:max_images, :, :, :]
+                try:
+                    write_image_file(k, images)
+                except IndexError:
+                    print('Can\'t write images ()'.format(images.shape))
             elif k.endswith('histogram'):
                 tf.summary.histogram(k, result_dict[k], step=i)
 
