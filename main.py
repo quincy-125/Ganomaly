@@ -10,6 +10,7 @@ color_channels = 3
 max_images = 9  # Tensorboard
 save_frequency = 500  # After how many steps should we save a checkpoint and summary
 number_of_images_to_fade = 350000  # How many images should be faded
+n_critic = 1
 # noinspection PyPep8
 input_dir = 'D:\PyCharm_Projects\Ganomaly\data'
 img_size = 4    # Beginning image size
@@ -21,7 +22,7 @@ overwrite = True
 checkpoint_prefix = os.path.join(result_dir, checkpoint_name)
 LATENT_DEPTHS = {'4': 512, '8': 512, '16': 512, '32': 256, '64': 256, '128': 128, '256': 64, '512': 32, '1024': 16}
 BATCH_SIZES = {'4': 256, '8': 256, '16': 256, '32': 8, '64': 8, '128': 8, '256': 8, '512': 6, '1024': 3}
-EPOCH_SIZES = {'4': 5, '8': 5, '16': 5, '32': 5, '64': 5, '128': 5, '256': 5, '512': 5, '1024': 5}
+EPOCH_SIZES = {'4': 15, '8': 15, '16': 15, '32': 15, '64': 5, '128': 5, '256': 5, '512': 5, '1024': 5}
 
 # ####################################################################
 # Temporary cleaning function
@@ -68,6 +69,7 @@ for lod in range(2, n_blocks):
     print('Beginning {}x{}x3'.format(im_size, im_size))
     batch_size = int(BATCH_SIZES[str(im_size)])
     train_dict['batch_size'] = batch_size
+    train_dict['n_critic'] = n_critic
     epochs = int(EPOCH_SIZES[str(im_size)])
 
     # Get models of appropriate size
@@ -90,7 +92,8 @@ for lod in range(2, n_blocks):
                   'encoder_fade': lod_encoders[1],
                   'number_of_images_to_fade': number_of_images_to_fade,
                   'batch_size': batch_size,
-                  'latent_dim': latent_dim
+                  'latent_dim': latent_dim,
+                  'n_critic': n_critic
                   }
 
     checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
@@ -134,7 +137,7 @@ for lod in range(2, n_blocks):
     summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
                  color_channels=color_channels, max_images=max_images, result_dir=result_dir)
     checkpoint.save(file_prefix=checkpoint_prefix)
-    print('\rImages seen: {}\t'
+    print('\nImages seen: {}\t'
           'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha: {:03f} '
           .format(train_dict['num_images_so_far'],
                   i, global_step, result_dict['gen_loss'], result_dict['disc_loss'], result_dict['enc_loss'],
