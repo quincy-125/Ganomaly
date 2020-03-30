@@ -1,5 +1,3 @@
-from tensorflow.keras.constraints import max_norm  # TODO: Change to MinMaxNorm
-from tensorflow.keras.initializers import RandomNormal
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import Dense
@@ -11,7 +9,7 @@ from tensorflow.keras.layers import AveragePooling2D
 from tensorflow.keras.layers import LeakyReLU
 from tensorflow.keras import backend
 from ganomaly.layers import WeightedSum, PixelNormalization, MinibatchStdev
-
+import tensorflow as tf
 
 # update the alpha value on each instance of WeightedSum
 def update_fadein(models, alpha=0):
@@ -25,9 +23,9 @@ def update_fadein(models, alpha=0):
 # add a discriminator block
 def add_discriminator_block(old_model, n_input_layers=3):
     # weight initialization
-    init = RandomNormal(stddev=0.02)
+    init = tf.keras.initializers.he_normal()
     # weight constraint
-    const = max_norm(1.0)
+    const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)
     # get shape of existing model
     in_shape = list(old_model.input.shape)
     # define new input shape as double the size
@@ -70,9 +68,9 @@ def add_discriminator_block(old_model, n_input_layers=3):
 # define the discriminator models for each image resolution
 def define_discriminator(n_blocks, latent_dim=None, input_shape=(4, 4, 3), style='discriminator'):
     # weight initialization
-    init = RandomNormal(stddev=0.02)
+    init = tf.keras.initializers.he_normal()
     # weight constraint
-    const = max_norm(1.0)
+    const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)
     model_list = list()
     # base model input
     in_image = Input(shape=input_shape)
@@ -89,7 +87,7 @@ def define_discriminator(n_blocks, latent_dim=None, input_shape=(4, 4, 3), style
     # dense output layer
     d = Flatten()(d)
     if style == 'discriminator':
-        out_class = Dense(1, activation='sigmoid')(d)
+        out_class = Dense(1, activation=None)(d)
     else:
         out_class = Dense(latent_dim)(d)
     # define model
@@ -113,9 +111,9 @@ def define_discriminator(n_blocks, latent_dim=None, input_shape=(4, 4, 3), style
 # noinspection DuplicatedCode
 def add_generator_block(old_model):
     # weight initialization
-    init = RandomNormal(stddev=0.02)
+    init = tf.keras.initializers.he_normal()
     # weight constraint
-    const = max_norm(1.0)
+    const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)
     # get the end of the last block
     block_end = old_model.layers[-2].output
     # upsample, and define new block
@@ -145,9 +143,9 @@ def add_generator_block(old_model):
 # noinspection DuplicatedCode
 def define_generator(latent_dim, n_blocks, in_dim=4):
     # weight initialization
-    init = RandomNormal(stddev=0.02)
+    init = tf.keras.initializers.he_normal()
     # weight constraint
-    const = max_norm(1.0)
+    const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)
     model_list = list()
     # base model latent input
     in_latent = Input(shape=(latent_dim,))

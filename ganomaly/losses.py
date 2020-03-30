@@ -3,16 +3,19 @@ import functools
 
 
 # Real score should be 1.0
-# Fake should be 0.0
+# Fake should be -1.0
 
 def generator_loss(fake_classification):
     return - tf.reduce_mean(fake_classification)
 
 
-def discriminator_loss(real_classification, fake_classification):
-    fake_loss = - tf.reduce_mean(real_classification)
-    real_loss = tf.reduce_mean(fake_classification)
-    disc_loss = tf.math.add(fake_loss, real_loss)
+def discriminator_loss(real_classification, fake_classification, gp=True):
+    # Assume that Fake is -1 and real is 1
+    fake_loss = tf.reduce_mean(fake_classification)
+    real_loss = tf.reduce_mean(real_classification)  # Actual - Predicted
+    disc_loss = fake_loss - real_loss + 0.00001
+
+    # TODO: Add gradient penalty
     return real_loss, fake_loss, disc_loss
 
 
@@ -26,6 +29,7 @@ def gradient_penalty(f, real, fake):
     # https://github.com/LynnHo/DCGAN-LSGAN-WGAN-GP-DRAGAN-Tensorflow-2/blob/master/tf2gan/loss.py
 
     def _gradient_penalty(f, real, fake=None):
+
         def _interpolate(a, b=None):
             if b is None:   # interpolation in DRAGAN
                 beta = tf.random.uniform(shape=tf.shape(a), minval=0., maxval=1.)

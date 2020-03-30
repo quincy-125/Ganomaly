@@ -8,14 +8,14 @@ from ganomaly.steps import train_step, summary_func
 
 color_channels = 3
 max_images = 9  # Tensorboard
-save_frequency = 500  # After how many steps should we save a checkpoint and summary
-number_of_images_to_fade = 350000  # How many images should be faded
-n_critic = 1
+save_frequency = 100  # After how many steps should we save a checkpoint and summary
+number_of_images_to_fade = 500000  # How many images should be faded
+n_critic = 500
 # noinspection PyPep8
 input_dir = 'D:\PyCharm_Projects\Ganomaly\data'
 img_size = 4    # Beginning image size
 n_blocks = 7    # how many doublings to do from size 4x4x3
-latent_dim = 512  # for encoder
+latent_dim = 128  # for encoder
 result_dir = 'results'
 checkpoint_name = 'training_checkpoints'
 overwrite = True
@@ -106,7 +106,7 @@ for lod in range(2, n_blocks):
                                      discriminator_fade=lod_discriminators[1],
                                      encoder_fade=lod_encoders[1]
                                      )
-
+    manager = tf.train.CheckpointManager(checkpoint, checkpoint_prefix, max_to_keep=3)
     scaled_data = get_dataset(input_dir, batch_size, im_size, epochs=epochs)
     # """
     result_dict = None
@@ -119,7 +119,7 @@ for lod in range(2, n_blocks):
         train_dict['alpha'] = m.alpha.numpy()
 
         result_dict = train_step(images, train_dict)
-        if i % save_frequency == 0:
+        if i % save_frequency == 0 and i > 0:
             print('\rImages seen: {}\t'
                   'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha:{:03f}'
                   .format(train_dict['num_images_so_far'],
@@ -127,7 +127,7 @@ for lod in range(2, n_blocks):
                           train_dict['alpha']))
             summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
                          color_channels=color_channels, max_images=max_images, result_dir=result_dir)
-            checkpoint.save(file_prefix=checkpoint_prefix)
+            manager.save()
         """
         # Temporarily limit the number of iterations for debugging purposes
         if i > 5:
@@ -137,6 +137,10 @@ for lod in range(2, n_blocks):
     summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
                  color_channels=color_channels, max_images=max_images, result_dir=result_dir)
     checkpoint.save(file_prefix=checkpoint_prefix)
+    manager.save()
+    lod_generators[0].save(os.path.join(result_dir, 'generator.h5'))
+    lod_discriminators[0].save(os.path.join(result_dir, 'discriminator.h5'))
+    lod_encoders[0].save(os.path.join(result_dir, 'encoder.h5'))
     print('\nImages seen: {}\t'
           'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha: {:03f} '
           .format(train_dict['num_images_so_far'],
