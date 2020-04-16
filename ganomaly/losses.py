@@ -13,7 +13,7 @@ def generator_loss(fake_classification):
     predictions = fake_classification
     gen_loss = tf.keras.losses.binary_crossentropy(labels, predictions, label_smoothing=0.2)
 
-    return gen_loss
+    return tf.math.reduce_mean(gen_loss)
 
 
 def discriminator_loss(real_classification, fake_classification, gp=0):

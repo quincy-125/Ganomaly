@@ -12,5 +12,4 @@
 #$ -l h_vmem=25G
 set -x
 
-echo "$PWD"
 python /research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Code/Ganomaly/main.py
