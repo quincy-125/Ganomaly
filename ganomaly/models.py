@@ -47,7 +47,6 @@ def add_discriminator_block(old_model, n_input_layers=3):
     # define straight-through model
     model1 = Model(in_image, d)
     # compile model
-    # model1.compile(loss=wasserstein_loss, optimizer=Adam(lr=0.001, beta_1=0, beta_2=0.99, epsilon=10e-8))
     # downsample the new larger image
     downsample = AveragePooling2D()(in_image)
     # connect old input processing to downsampled new input
@@ -60,8 +59,6 @@ def add_discriminator_block(old_model, n_input_layers=3):
         d = old_model.layers[i](d)
     # define straight-through model
     model2 = Model(in_image, d)
-    # compile model
-    # model2.compile(loss=wasserstein_loss, optimizer=Adam(lr=0.001, beta_1=0, beta_2=0.99, epsilon=10e-8))
     return [model1, model2]
 
 
@@ -87,7 +84,7 @@ def define_discriminator(n_blocks, latent_dim=None, input_shape=(4, 4, 3), style
     # dense output layer
     d = Flatten()(d)
     if style == 'discriminator':
-        out_class = Dense(1, activation=None)(d)
+        out_class = Dense(1, activation='sigmoid')(d)
     else:
         out_class = Dense(latent_dim)(d)
     # define model
