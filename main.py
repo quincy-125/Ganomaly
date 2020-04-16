@@ -7,12 +7,13 @@ from ganomaly.models import define_discriminator, define_generator
 from ganomaly.steps import train_step, summary_func
 
 color_channels = 3
-max_images = 9  # Tensorboard
-save_frequency = 100  # After how many steps should we save a checkpoint and summary
+max_images = 4  # Tensorboard
+save_frequency = 500  # After how many steps should we save a checkpoint and summary
 number_of_images_to_fade = 500000  # How many images should be faded
-n_critic = 500
+n_critic = 1
 # noinspection PyPep8
 input_dir = 'D:\PyCharm_Projects\Ganomaly\data'
+#input_dir = '/research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Data/Normal/tfrecords/progan/'
 img_size = 4    # Beginning image size
 n_blocks = 7    # how many doublings to do from size 4x4x3
 latent_dim = 128  # for encoder
@@ -23,22 +24,6 @@ checkpoint_prefix = os.path.join(result_dir, checkpoint_name)
 LATENT_DEPTHS = {'4': 512, '8': 512, '16': 512, '32': 256, '64': 256, '128': 128, '256': 64, '512': 32, '1024': 16}
 BATCH_SIZES = {'4': 256, '8': 256, '16': 256, '32': 8, '64': 8, '128': 8, '256': 8, '512': 6, '1024': 3}
 EPOCH_SIZES = {'4': 15, '8': 15, '16': 15, '32': 15, '64': 5, '128': 5, '256': 5, '512': 5, '1024': 5}
-
-# ####################################################################
-# Temporary cleaning function
-# ####################################################################
-
-if overwrite is True:
-    for root, dirs, files in os.walk(result_dir):
-        for file in filter(lambda x: re.match(checkpoint_name, x), files):
-            print('Removing: {}'.format(os.path.join(root, file)))
-            os.remove(os.path.join(root, file))
-        for file in filter(lambda x: re.match('checkpoint', x), files):
-            print('Removing: {}'.format(os.path.join(root, file)))
-            os.remove(os.path.join(root, file))
-        for file in filter(lambda x: re.match('events', x), files):
-            print('Removing: {}'.format(os.path.join(root, file)))
-            os.remove(os.path.join(root, file))
 
 # ####################################################################
 # Initialize the models
@@ -66,7 +51,7 @@ m.alpha = tf.Variable(0., trainable=False)
 for lod in range(2, n_blocks):
     im_size = int(2 ** lod)
 
-    print('Beginning {}x{}x3'.format(im_size, im_size))
+    print('\nBeginning {}x{}x3'.format(im_size, im_size))
     batch_size = int(BATCH_SIZES[str(im_size)])
     train_dict['batch_size'] = batch_size
     train_dict['n_critic'] = n_critic
@@ -133,16 +118,15 @@ for lod in range(2, n_blocks):
         if i > 5:
             break
         """
-    # Complete with this iteration
-    summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
-                 color_channels=color_channels, max_images=max_images, result_dir=result_dir)
-    checkpoint.save(file_prefix=checkpoint_prefix)
-    manager.save()
-    lod_generators[0].save(os.path.join(result_dir, 'generator.h5'))
-    lod_discriminators[0].save(os.path.join(result_dir, 'discriminator.h5'))
-    lod_encoders[0].save(os.path.join(result_dir, 'encoder.h5'))
-    print('\nImages seen: {}\t'
-          'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha: {:03f} '
-          .format(train_dict['num_images_so_far'],
-                  i, global_step, result_dict['gen_loss'], result_dict['disc_loss'], result_dict['enc_loss'],
-                  train_dict['alpha']))
+# Complete with this iteration
+summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
+             color_channels=color_channels, max_images=max_images, result_dir=result_dir)
+manager.save()
+lod_generators[0].save(os.path.join(result_dir, 'generator.h5'))
+lod_discriminators[0].save(os.path.join(result_dir, 'discriminator.h5'))
+lod_encoders[0].save(os.path.join(result_dir, 'encoder.h5'))
+print('\nImages seen: {}\t'
+      'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha: {:03f} '
+      .format(train_dict['num_images_so_far'],
+              i, global_step, result_dict['gen_loss'], result_dict['disc_loss'], result_dict['enc_loss'],
+              train_dict['alpha']))

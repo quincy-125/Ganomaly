@@ -5,8 +5,8 @@ import os
 from matplotlib import pyplot
 from math import sqrt
 from PIL import Image
-import functools
 import tensorflow as tf
+
 
 def train_step(images, train_dict, lambda_param=10):
     """
@@ -30,8 +30,8 @@ def train_step(images, train_dict, lambda_param=10):
     """
     batch_size = train_dict['batch_size']
     latent_dim = train_dict['latent_dim']
-    noise = tf.random.normal([batch_size, latent_dim])
-
+    z_hat_fake = tf.random.normal([batch_size, latent_dim])
+    gp = 0
     generator_optimizer = train_dict['generator_optimizer']
     discriminator_optimizer = train_dict['discriminator_optimizer']
     encoder_optimizer = train_dict['encoder_optimizer']
@@ -48,27 +48,26 @@ def train_step(images, train_dict, lambda_param=10):
         encoder = train_dict['encoder_full']
 
     with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape, tf.GradientTape() as enc_tape:
-
+        assert np.max(images) < 1
+        assert np.min(images) > -1
         z_hat_real = encoder(images, training=True)
         generated_images = generator(z_hat_real, training=True)
-        fake_classification = discriminator(generated_images, training=True)
         real_classification = discriminator(images, training=True)
+        fake_classification = discriminator(generated_images, training=True)
 
-        real_loss, fake_loss, disc_loss = discriminator_loss(real_classification, fake_classification)
+        gp = gradient_penalty(discriminator, images, generated_images)
+        real_loss, fake_loss, disc_loss = discriminator_loss(real_classification, fake_classification, gp=gp)
         enc_loss = encoder_loss(images, generated_images)
         gen_loss = generator_loss(fake_classification)
 
-        # gp = gradient_penalty(functools.partial(discriminator, training=True), images, generated_images)
-        # disc_loss = tf.math.add(disc_loss, lambda_param * gp)
-
-    tf.print('\rgen_loss: {:04f}'.format(gen_loss), end='\t')
-    tf.print('real_loss: {:04f}'.format(real_loss), end='\t')
-    tf.print('fake_loss: {:04f}'.format(fake_loss), end='\t')
-    tf.print('total_loss: {:04f}'.format(disc_loss), end='\t')
-    tf.print('Avg_Fake_Score: {:04f}'.format(tf.reduce_mean(fake_classification)), end='\t')
-    tf.print('Avg_Real_Score: {:04f}'.format(tf.reduce_mean(real_classification)), end='\t')
+    tf.print('\rgen_loss: {:03f}'.format(gen_loss), end='\t')
+    tf.print('real_loss: {:03f}'.format(real_loss), end='\t')
+    tf.print('fake_loss: {:03f}'.format(fake_loss), end='\t')
+    tf.print('enc_loss: {:03f}'.format(enc_loss), end='\t')
+    tf.print('Avg_Fake_Score: {:02f}'.format(tf.reduce_mean(fake_classification)), end='\t')
+    tf.print('Avg_Real_Score: {:02f}'.format(tf.reduce_mean(real_classification)), end='\t')
+    tf.print('Alpha: {:02f}'.format(train_dict['alpha']), end='\t')
     tf.print('image_no.: {}'.format(train_dict['num_images_so_far']), end='\t')
-
 
     gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
     gradients_of_encoder = enc_tape.gradient(enc_loss, encoder.trainable_variables)
@@ -82,12 +81,11 @@ def train_step(images, train_dict, lambda_param=10):
         discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
 
     return {'gen_loss': gen_loss, 'disc_loss': disc_loss, 'enc_loss': enc_loss,
-            'fake_images': generated_images, 'real_images': images,
-            'real_logit_histogram': real_classification, 'fake_logit_histogram': fake_classification}
+            'fake_images': generated_images, 'real_images': images, 'fake_avg': fake_loss, 'real_avg': real_loss}  # ,
+    # 'real_logit_histogram': real_classification, 'fake_logit_histogram': fake_classification}
 
 
 def summary_func(writer, i, local_step, im_size, result_dict, alpha=0, color_channels=3, max_images=25, result_dir='.'):
-
     def write_image_file(key_name=None, images=None, sub_img_size=800):
 
         if images.shape[0] > max_images:
@@ -107,25 +105,22 @@ def summary_func(writer, i, local_step, im_size, result_dict, alpha=0, color_cha
         pyplot.savefig(filename1, bbox_inches='tight')
         pyplot.close()
 
-
     with writer.as_default():
         tf.summary.scalar('global_step', i, step=i)
         tf.summary.scalar('local_step', local_step, step=i)
         tf.summary.scalar('alpha', alpha, step=i)
+
         for k in result_dict.keys():
-            if k.endswith('loss') or k.endswith('alpha'):
+            if k.endswith('loss') or k.endswith('alpha') or k.endswith('avg'):
                 tf.summary.scalar(k, result_dict[k], step=i)
             elif k.endswith('images'):
-                imgs = tf.math.divide(tf.math.multiply(tf.math.add(result_dict[k].numpy(), 1), 255), 2)
-                imgs = np.reshape(imgs, (imgs.shape[0], im_size, im_size, color_channels))
-                imgs = imgs.astype(int)
-                tf.summary.image(k, imgs, step=i, max_outputs=3)
+                tf.summary.image(k, result_dict[k], step=i, max_outputs=1)
+                imgs = tf.math.multiply(result_dict[k].numpy(), 255)
+                imgs = tf.cast(imgs, tf.uint8)
                 try:
-                    write_image_file(k, imgs)
+                    write_image_file(key_name=k, images=imgs)
                 except IndexError:
                     print('Can\'t write images {}'.format(images.shape))
-
-
             elif k.endswith('histogram'):
                 tf.summary.histogram(k, result_dict[k], step=i)
 
