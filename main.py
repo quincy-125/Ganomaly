@@ -1,5 +1,4 @@
 import os
-import re
 
 import tensorflow as tf
 from ganomaly.datasets import get_dataset
@@ -10,10 +9,10 @@ color_channels = 3
 max_images = 4  # Tensorboard
 save_frequency = 500  # After how many steps should we save a checkpoint and summary
 number_of_images_to_fade = 500000  # How many images should be faded
-n_critic = 1
+n_critic = 5
 # noinspection PyPep8
 input_dir = 'D:\PyCharm_Projects\Ganomaly\data'
-#input_dir = '/research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Data/Normal/tfrecords/progan/'
+#input_dir = '/research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Quincy/Data/train_data'
 img_size = 4    # Beginning image size
 n_blocks = 7    # how many doublings to do from size 4x4x3
 latent_dim = 128  # for encoder
@@ -21,10 +20,9 @@ result_dir = 'results'
 checkpoint_name = 'training_checkpoints'
 overwrite = True
 checkpoint_prefix = os.path.join(result_dir, checkpoint_name)
-LATENT_DEPTHS = {'4': 512, '8': 512, '16': 512, '32': 256, '64': 256, '128': 128, '256': 64, '512': 32, '1024': 16}
 BATCH_SIZES = {'4': 256, '8': 256, '16': 256, '32': 8, '64': 8, '128': 8, '256': 8, '512': 6, '1024': 3}
-EPOCH_SIZES = {'4': 15, '8': 15, '16': 15, '32': 15, '64': 5, '128': 5, '256': 5, '512': 5, '1024': 5}
-
+EPOCH_SIZES = {'4': 10, '8': 10, '16': 5, '32': 5, '64': 5, '128': 5, '256': 5, '512': 5, '1024': 5}
+learning_rate=0.001
 # ####################################################################
 # Initialize the models
 # ####################################################################
@@ -34,9 +32,9 @@ discriminators = define_discriminator(n_blocks, latent_dim=latent_dim, input_sha
 encoders = define_discriminator(n_blocks, latent_dim=latent_dim, input_shape=(4, 4, color_channels), style='encoder')
 generators = define_generator(latent_dim, n_blocks)
 
-generator_optimizer = tf.keras.optimizers.Adam(1e-4)
-discriminator_optimizer = tf.keras.optimizers.Adam(1e-4)
-encoder_optimizer = tf.keras.optimizers.Adam(1e-4)
+generator_optimizer = tf.keras.optimizers.Adam(learning_rate)
+discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate)
+encoder_optimizer = tf.keras.optimizers.Adam(learning_rate)
 
 writer = tf.summary.create_file_writer(result_dir)
 
@@ -106,9 +104,9 @@ for lod in range(2, n_blocks):
         result_dict = train_step(images, train_dict)
         if i % save_frequency == 0 and i > 0:
             print('\rImages seen: {}\t'
-                  'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha:{:03f}'
+                  'local_step: {}, global step: {}, gen_loss: {:.6f}, disc_loss: {:.6f}, enc_loss: {:.6f}, alpha:{:.3f}'
                   .format(train_dict['num_images_so_far'],
-                          i, global_step, result_dict['gen_loss'], result_dict['disc_loss'], result_dict['enc_loss'],
+                          i, global_step, result_dict['generator_loss'], result_dict['discriminator_loss'], result_dict['encoder_loss'],
                           train_dict['alpha']))
             summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
                          color_channels=color_channels, max_images=max_images, result_dir=result_dir)

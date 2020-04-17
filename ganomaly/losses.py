@@ -10,10 +10,10 @@ def generator_loss(fake_classification):
     # Using ones here, because I want the fakes to be classified as close to 1 as possible
     # (opposite from discriminator)
     labels = tf.ones_like(fake_classification)
-    predictions = fake_classification
-    gen_loss = tf.keras.losses.binary_crossentropy(labels, predictions, label_smoothing=0.2)
-
-    return tf.math.reduce_mean(gen_loss)
+    gen_loss = tf.keras.losses.binary_crossentropy(labels, fake_classification, label_smoothing=0.1)
+    gen_loss = tf.reduce_mean(gen_loss) + 1e-8
+    # gen_loss = - tf.reduce_mean(fake_classification) + 1e-8
+    return gen_loss
 
 
 def discriminator_loss(real_classification, fake_classification, gp=0):
@@ -23,8 +23,7 @@ def discriminator_loss(real_classification, fake_classification, gp=0):
 
     labels = tf.concat([tf.zeros_like(fake_classification), tf.ones_like(real_classification)], 0)
     predictions = tf.concat([fake_classification, real_classification], 0)
-    disc_loss = tf.keras.losses.binary_crossentropy(labels, predictions, label_smoothing=0.2)
-    # gp2 = gp2(discriminator, x_tild=fake_img, x=real, lamb=10)
+    disc_loss = tf.keras.losses.binary_crossentropy(labels, predictions, label_smoothing=0.05)
     # disc_loss += tf.math.multiply(gp, disc_loss)    #  Add gradient penalty
     return real_loss, fake_loss, tf.math.reduce_mean(disc_loss)
 
