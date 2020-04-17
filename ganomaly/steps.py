@@ -72,13 +72,8 @@ def train_step(images, train_dict, lambda_param=10):
     if train_dict['num_images_so_far'] % train_dict['n_critic'] == 0:
         active_critic = True
 
-    # Control for the case when the generator starts fo ail out of sync with disc
-    disc_critic = True
-    if gen_loss - disc_loss > 2:
-        disc_critic = False
-
     # Only update the discriminator every n images
-    if active_critic and disc_critic:
+    if active_critic:
         gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
         discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
 
