@@ -76,7 +76,7 @@ def train_step(images, train_dict, lambda_param=10):
 
         disc_loss += gradient_penalty(discriminator, fake_images, images)
         gen_loss = generator_loss(fake_classification)
-        gen_loss += img_loss(images, fake_images)
+        #gen_loss += img_loss(images, fake_images)
 
     gradients_of_encoder = enc_tape.gradient(enc_loss, encoder.trainable_variables)
     encoder_optimizer.apply_gradients(zip(gradients_of_encoder, encoder.trainable_variables))

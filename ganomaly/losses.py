@@ -6,8 +6,7 @@ bce = tf.keras.losses.BinaryCrossentropy(from_logits=True, label_smoothing=0.3)
 # Fake should be 0
 
 def generator_loss(fake_classification):
-    #gen_loss = -tf.math.reduce_mean(fake_classification)
-    gen_loss = -bce(tf.ones_like(fake_classification), fake_classification)
+    gen_loss = bce(tf.ones_like(fake_classification), fake_classification)
     return gen_loss
 
 
