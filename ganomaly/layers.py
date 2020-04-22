@@ -1,7 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras.backend import concatenate as Concatenate
 from tensorflow.keras.layers import Layer, Add
-from tensorflow.keras import backend
 
 
 # weighted sum output
@@ -9,7 +8,8 @@ class WeightedSum(Add):
     # init with default value
     def __init__(self, alpha=0.0, **kwargs):
         super(WeightedSum, self).__init__(**kwargs)
-        self.alpha = backend.variable(alpha, name='ws_alpha')
+        self.alpha = alpha
+        self.alpha = tf.Variable(initial_value=0., trainable=False)
 
     # output a weighted sum of inputs
     def _merge_function(self, inputs):

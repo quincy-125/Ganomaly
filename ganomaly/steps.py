@@ -1,4 +1,4 @@
-from ganomaly.losses import generator_loss, discriminator_loss, encoder_loss, gradient_penalty
+from ganomaly.losses import generator_loss, discriminator_loss, encoder_loss, gradient_penalty, img_loss
 from ganomaly.models import update_fadein
 import numpy as np
 import os
@@ -12,6 +12,7 @@ def train_step(images, train_dict, lambda_param=10):
     """
     Organize computation of each step
 
+    :param lambda_param: gradient penalty term
     :param images: real image matrix
     :param train_dict:
             'generator_optimizer' Optimizer for generator
@@ -28,6 +29,9 @@ def train_step(images, train_dict, lambda_param=10):
 
     :return:
     """
+    prev_gen_loss = None
+    active_critic = True
+
     batch_size = train_dict['batch_size']
     latent_dim = train_dict['latent_dim']
 
@@ -37,12 +41,14 @@ def train_step(images, train_dict, lambda_param=10):
     encoder_optimizer = train_dict['encoder_optimizer']
 
     # Determine whether fading should occur generator/discriminator/encoder
-    if train_dict['num_images_so_far'] > train_dict['number_of_images_to_fade'] and images.shape[1] > 4:
+    if train_dict['num_images_so_far'] < train_dict['number_of_images_to_fade'] and images.shape[1] > 4:
+        alpha = train_dict['generator_fade'].layers[-1].alpha.numpy()
         generator = train_dict['generator_fade']
         discriminator = train_dict['discriminator_fade']
         encoder = train_dict['encoder_fade']
         update_fadein([generator, discriminator, encoder], alpha=train_dict['alpha'])
     else:
+        alpha = train_dict['alpha']
         generator = train_dict['generator_full']
         discriminator = train_dict['discriminator_full']
         encoder = train_dict['encoder_full']
@@ -57,42 +63,51 @@ def train_step(images, train_dict, lambda_param=10):
         real_classification = discriminator(images, training=True)
         fake_classification = discriminator(fake_images, training=True)
 
-        gp = gradient_penalty(discriminator, images, fake_images)
-        real_loss, fake_loss, disc_loss = discriminator_loss(real_classification, fake_classification, gp=gp)
-        enc_loss = encoder_loss(fake_images, fake_images_reconstructed)
+        # Get losses
+        # Encoder loss is the delta of z scores (input_noise and z_hat) and reconstructed image loss
+        enc_loss = img_loss(fake_images, fake_images_reconstructed)
+
+        # Discriminator is based only on its calls relative to truth
+        # randomly flip the labels 10% of the time
+        if np.random.random() < 0.1:
+            real_score, fake_score, disc_loss = discriminator_loss(real_classification, real_classification)
+        else:
+            real_score, fake_score, disc_loss = discriminator_loss(real_classification, fake_classification)
+
+        disc_loss += gradient_penalty(discriminator, fake_images, images)
         gen_loss = generator_loss(fake_classification)
+        gen_loss += img_loss(images, fake_images)
 
-    gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
     gradients_of_encoder = enc_tape.gradient(enc_loss, encoder.trainable_variables)
-
-    generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
     encoder_optimizer.apply_gradients(zip(gradients_of_encoder, encoder.trainable_variables))
 
-    active_critic = False
-    if train_dict['num_images_so_far'] % train_dict['n_critic'] == 0:
-        active_critic = True
-
-    # Only update the discriminator every n images
-    if active_critic:
-        gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
-        discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
-
-    tf.print('\rgen_loss: {:.5f}'.format(gen_loss), end='\t')
+    tf.print(f'\rMEAN:{np.mean(fake_images_reconstructed.numpy()):.2f} ', end='\t')
+    tf.print(f'rMEAN: {np.mean(images.numpy()):.2f} ', end='\t')
+    tf.print('gen_loss: {:.5f}'.format(gen_loss), end='\t')
     tf.print('disc_loss: {:.5f}'.format(disc_loss), end='\t')
-    tf.print('real_loss: {:.5f}'.format(real_loss), end='\t')
-    tf.print('fake_loss: {:.5f}'.format(fake_loss), end='\t')
     tf.print('enc_loss: {:.5f}'.format(enc_loss), end='\t')
-    tf.print('Avg_Fake_Score: {:.5f}'.format(tf.reduce_mean(fake_classification)), end='\t')
-    tf.print('Avg_Real_Score: {:.5f}'.format(tf.reduce_mean(real_classification)), end='\t')
-    tf.print('Alpha: {:.3f}'.format(train_dict['alpha']), end='\t')
+    tf.print('Avg_Fake_Score: {:.5f}'.format(fake_score), end='\t')
+    tf.print('Avg_Real_Score: {:.5f}'.format(real_score), end='\t')
+    tf.print('Alpha: {:.3f}'.format(alpha), end='\t')
     tf.print('image_no.: {}'.format(train_dict['num_images_so_far']), end='\t')
 
+
+    gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
+    generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
+
+    if np.random.random() < 0.95:
+        gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
+        discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
+    else:
+        tf.print('Not Updating D', end='\t')
+
+
     return {'generator_loss': gen_loss, 'discriminator_loss': disc_loss, 'encoder_loss': enc_loss,
-            'fake_images': fake_images, 'real_images': images, 'fake_avg': fake_loss, 'real_avg': real_loss}  # ,
-    # 'real_logit_histogram': real_classification, 'fake_logit_histogram': fake_classification}
+            'fake_images': fake_images, 'real_images': images, 'fake_avg': fake_score, 'real_avg': real_score,
+            'alpha': alpha}
 
 
-def summary_func(writer, i, local_step, im_size, result_dict, alpha=0, color_channels=3, max_images=1, result_dir='.'):
+def summary_func(writer, i, local_step, im_size, result_dict, alpha=0, max_images=1, result_dir='.'):
     def write_image_file(key_name=None, images=None, sub_img_size=800):
 
         if images.shape[0] > max_images:
@@ -122,12 +137,12 @@ def summary_func(writer, i, local_step, im_size, result_dict, alpha=0, color_cha
                 tf.summary.scalar(k, result_dict[k], step=i)
             elif k.endswith('images'):
                 tf.summary.image(k, result_dict[k], step=i, max_outputs=max_images)
-                imgs = tf.math.multiply(result_dict[k].numpy(), 255)
+                imgs = tf.math.add(tf.math.multiply(result_dict[k].numpy(), 127.5), 127.5)
                 imgs = tf.cast(imgs, tf.uint8)
                 try:
                     write_image_file(key_name=k, images=imgs)
                 except IndexError:
-                    print('Can\'t write images {}'.format(images.shape))
+                    print('Can\'t write images {}'.format(imgs.shape))
             elif k.endswith('histogram'):
                 tf.summary.histogram(k, result_dict[k], step=i)
 

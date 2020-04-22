@@ -7,22 +7,21 @@ from ganomaly.steps import train_step, summary_func
 
 color_channels = 3
 max_images = 4  # Tensorboard
-save_frequency = 500  # After how many steps should we save a checkpoint and summary
+save_frequency = 100  # After how many steps should we save a checkpoint and summary
 number_of_images_to_fade = 500000  # How many images should be faded
-n_critic = 5
-# noinspection PyPep8
+n_critic = 10
+# noinspection PyPep8,PyPep8,PyPep8,PyPep8
 input_dir = 'D:\PyCharm_Projects\Ganomaly\data'
-#input_dir = '/research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Quincy/Data/train_data'
-img_size = 4    # Beginning image size
-n_blocks = 7    # how many doublings to do from size 4x4x3
+# input_dir = '/research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Quincy/Data/train_data'
+img_size = 4  # Beginning image size
+n_blocks = 7  # how many doublings to do from size 4x4x3
 latent_dim = 128  # for encoder
 result_dir = 'results'
 checkpoint_name = 'training_checkpoints'
-overwrite = True
 checkpoint_prefix = os.path.join(result_dir, checkpoint_name)
-BATCH_SIZES = {'4': 256, '8': 256, '16': 256, '32': 8, '64': 8, '128': 8, '256': 8, '512': 6, '1024': 3}
-EPOCH_SIZES = {'4': 10, '8': 10, '16': 5, '32': 5, '64': 5, '128': 5, '256': 5, '512': 5, '1024': 5}
-learning_rate=0.001
+BATCH_SIZES = {'4': 1024, '8': 512, '16': 256, '32': 8, '64': 8, '128': 8, '256': 8, '512': 6, '1024': 3}
+EPOCH_SIZES = {'4': 10, '8': 8, '16': 5, '32': 5, '64': 5, '128': 5, '256': 5, '512': 5, '1024': 5}
+learning_rate = 0.0005
 # ####################################################################
 # Initialize the models
 # ####################################################################
@@ -32,7 +31,7 @@ discriminators = define_discriminator(n_blocks, latent_dim=latent_dim, input_sha
 encoders = define_discriminator(n_blocks, latent_dim=latent_dim, input_shape=(4, 4, color_channels), style='encoder')
 generators = define_generator(latent_dim, n_blocks)
 
-generator_optimizer = tf.keras.optimizers.Adam(learning_rate)
+generator_optimizer = tf.keras.optimizers.Adam(0.005)
 discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate)
 encoder_optimizer = tf.keras.optimizers.Adam(learning_rate)
 
@@ -63,6 +62,11 @@ for lod in range(2, n_blocks):
 
     # Make sure sizes are the same
     assert lod_generators[0].output_shape == lod_discriminators[0].input_shape
+    if im_size == 4:
+        lod_generators.append(lod_generators[0])
+    tf.keras.utils.plot_model(lod_generators[1], to_file='generator.png', show_shapes=True, expand_nested=True)
+    tf.keras.utils.plot_model(lod_discriminators[1], to_file='discriminator.png', show_shapes=True, expand_nested=True)
+    tf.keras.utils.plot_model(lod_encoders[1], to_file='encoder.png', show_shapes=True, expand_nested=True)
 
     train_dict = {'generator_optimizer': generator_optimizer,
                   'discriminator_optimizer': discriminator_optimizer,
@@ -96,6 +100,7 @@ for lod in range(2, n_blocks):
     i = None
     for i, images in enumerate(scaled_data):
         global_step += 1
+        train_dict['step'] = i
         train_dict['num_images_so_far'] = i * batch_size
 
         m.alpha.assign(tf.math.minimum(train_dict['num_images_so_far'] / float(number_of_images_to_fade - 1), 1.0))
@@ -106,25 +111,27 @@ for lod in range(2, n_blocks):
             print('\rImages seen: {}\t'
                   'local_step: {}, global step: {}, gen_loss: {:.6f}, disc_loss: {:.6f}, enc_loss: {:.6f}, alpha:{:.3f}'
                   .format(train_dict['num_images_so_far'],
-                          i, global_step, result_dict['generator_loss'], result_dict['discriminator_loss'], result_dict['encoder_loss'],
-                          train_dict['alpha']))
+                          i, global_step, result_dict['generator_loss'], result_dict['discriminator_loss'],
+                          result_dict['encoder_loss'],
+                          result_dict['alpha']))
             summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
-                         color_channels=color_channels, max_images=max_images, result_dir=result_dir)
+                         max_images=max_images, result_dir=result_dir)
             manager.save()
         """
         # Temporarily limit the number of iterations for debugging purposes
-        if i > 5:
+        if i > 5 and im_size==4:
             break
         """
-# Complete with this iteration
-summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
-             color_channels=color_channels, max_images=max_images, result_dir=result_dir)
-manager.save()
-lod_generators[0].save(os.path.join(result_dir, 'generator.h5'))
-lod_discriminators[0].save(os.path.join(result_dir, 'discriminator.h5'))
-lod_encoders[0].save(os.path.join(result_dir, 'encoder.h5'))
-print('\nImages seen: {}\t'
-      'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha: {:03f} '
-      .format(train_dict['num_images_so_far'],
-              i, global_step, result_dict['gen_loss'], result_dict['disc_loss'], result_dict['enc_loss'],
-              train_dict['alpha']))
+    # Complete with this iteration
+    summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
+                 max_images=max_images, result_dir=result_dir)
+    manager.save()
+    lod_generators[0].save(os.path.join(result_dir, 'generator.h5'))
+    lod_discriminators[0].save(os.path.join(result_dir, 'discriminator.h5'))
+    lod_encoders[0].save(os.path.join(result_dir, 'encoder.h5'))
+    print('\nImages seen: {}\t'
+          'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha: {:03f} '
+          .format(train_dict['num_images_so_far'],
+                  i, global_step, result_dict['generator_loss'], result_dict['discriminator_loss'],
+                  result_dict['encoder_loss'],
+                  result_dict['alpha']))
