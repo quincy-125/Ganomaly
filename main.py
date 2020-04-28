@@ -3,37 +3,42 @@ import os
 import tensorflow as tf
 from ganomaly.datasets import get_dataset
 from ganomaly.models import define_discriminator, define_generator
-from ganomaly.steps import train_step, summary_func
+from ganomaly.steps import train_discriminator, train_encoder, train_generator, summary_func
 
 color_channels = 3
 max_images = 4  # Tensorboard
 save_frequency = 100  # After how many steps should we save a checkpoint and summary
 number_of_images_to_fade = 500000  # How many images should be faded
-n_critic = 10
 # noinspection PyPep8,PyPep8,PyPep8,PyPep8
-input_dir = 'D:\PyCharm_Projects\Ganomaly\data'
+input_dir = 'D:\PyCharm_Projects\Ganomaly\data\\train_data'
 # input_dir = '/research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Quincy/Data/train_data'
 img_size = 4  # Beginning image size
 n_blocks = 7  # how many doublings to do from size 4x4x3
-latent_dim = 128  # for encoder
-result_dir = 'results'
+latent_dim = 512  # for encoder
 checkpoint_name = 'training_checkpoints'
+BATCH_SIZES = {'4': 512, '8': 128, '16': 64, '32': 8, '64': 8, '128': 8, '256': 8, '512': 6, '1024': 3}
+EPOCH_SIZES = {'4': 1, '8': 1, '16': 1, '32': 1, '64': 1, '128': 5, '256': 5, '512': 5, '1024': 5}
+learning_rate = 0.001
+label_flip_rate = 0.05
+n_critic = 5
+
+result_dir_components = ['results', learning_rate, label_flip_rate, latent_dim, n_critic]
+result_dir = '_'.join([str(x) for x in result_dir_components])
 checkpoint_prefix = os.path.join(result_dir, checkpoint_name)
-BATCH_SIZES = {'4': 1024, '8': 512, '16': 256, '32': 8, '64': 8, '128': 8, '256': 8, '512': 6, '1024': 3}
-EPOCH_SIZES = {'4': 10, '8': 8, '16': 5, '32': 5, '64': 5, '128': 5, '256': 5, '512': 5, '1024': 5}
-learning_rate = 0.0005
+
 # ####################################################################
 # Initialize the models
 # ####################################################################
 # Each of these returns a pair of models for each image size
 # [[size1_full, size1_fade], [size2_full, size2_fade]]
+
 discriminators = define_discriminator(n_blocks, latent_dim=latent_dim, input_shape=(4, 4, color_channels))
 encoders = define_discriminator(n_blocks, latent_dim=latent_dim, input_shape=(4, 4, color_channels), style='encoder')
 generators = define_generator(latent_dim, n_blocks)
 
-generator_optimizer = tf.keras.optimizers.Adam(0.005)
-discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate)
-encoder_optimizer = tf.keras.optimizers.Adam(learning_rate)
+generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.0, beta_2=0.99, epsilon=1e-08)
+discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.0, beta_2=0.99, epsilon=1e-08)
+encoder_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.0, beta_2=0.99, epsilon=1e-08)
 
 writer = tf.summary.create_file_writer(result_dir)
 
@@ -51,7 +56,6 @@ for lod in range(2, n_blocks):
     print('\nBeginning {}x{}x3'.format(im_size, im_size))
     batch_size = int(BATCH_SIZES[str(im_size)])
     train_dict['batch_size'] = batch_size
-    train_dict['n_critic'] = n_critic
     epochs = int(EPOCH_SIZES[str(im_size)])
 
     # Get models of appropriate size
@@ -79,8 +83,7 @@ for lod in range(2, n_blocks):
                   'encoder_fade': lod_encoders[1],
                   'number_of_images_to_fade': number_of_images_to_fade,
                   'batch_size': batch_size,
-                  'latent_dim': latent_dim,
-                  'n_critic': n_critic
+                  'latent_dim': latent_dim
                   }
 
     checkpoint = tf.train.Checkpoint(generator_optimizer=generator_optimizer,
@@ -95,6 +98,11 @@ for lod in range(2, n_blocks):
                                      )
     manager = tf.train.CheckpointManager(checkpoint, checkpoint_prefix, max_to_keep=3)
     scaled_data = get_dataset(input_dir, batch_size, im_size, epochs=epochs)
+
+    generator_optimizer = train_dict['generator_optimizer']
+    discriminator_optimizer = train_dict['discriminator_optimizer']
+    encoder_optimizer = train_dict['encoder_optimizer']
+
     # """
     result_dict = None
     i = None
@@ -106,22 +114,57 @@ for lod in range(2, n_blocks):
         m.alpha.assign(tf.math.minimum(train_dict['num_images_so_far'] / float(number_of_images_to_fade - 1), 1.0))
         train_dict['alpha'] = m.alpha.numpy()
 
-        result_dict = train_step(images, train_dict)
+        # Determine whether fading should occur generator/discriminator/encoder
+        if train_dict['num_images_so_far'] < train_dict['number_of_images_to_fade'] and images.shape[1] > 4:
+            alpha = train_dict['generator_fade'].layers[-1].alpha.numpy()
+            generator = train_dict['generator_fade']
+            discriminator = train_dict['discriminator_fade']
+            encoder = train_dict['encoder_fade']
+            update_fadein([generator, discriminator, encoder], alpha=train_dict['alpha'])
+        else:
+            alpha = train_dict['alpha']
+            generator = train_dict['generator_full']
+            discriminator = train_dict['discriminator_full']
+            encoder = train_dict['encoder_full']
+
+        input_noise = tf.random.normal([batch_size, latent_dim])
+
+        disc_loss, real_score, fake_score = train_discriminator(discriminator, generator, discriminator_optimizer,
+                                                                images, input_noise, batch_size)
+
+        if discriminator_optimizer.iterations.numpy() % n_critic == 0:
+            gen_loss = train_generator(generator, discriminator, generator_optimizer, input_noise)
+            enc_loss, fake_images, fake_images_reconstructed = train_encoder(encoder, generator, encoder_optimizer,
+                                                                             input_noise)
+            print(
+                f'{i}, gen_loss: {gen_loss.numpy():.5f}, disc_loss: {disc_loss.numpy():.5f}, '
+                f'enc_loss: {enc_loss.numpy():.5f}, alpha:{alpha:.3f}, '
+                f'real_score:{real_score:.3f}, fake_score:{fake_score:.3f}')
+        else:
+            gen_loss, enc_loss, fake_images, fake_images_reconstructed = None, None, None, None
+
+        result_dict = dict()
+        result_dict['generator_loss'] = gen_loss
+        result_dict['discriminator_loss'] = disc_loss
+        result_dict['encoder_loss'] = enc_loss
+        result_dict['alpha'] = alpha
+        result_dict['real_score'] = real_score
+        result_dict['fake_score'] = fake_score
+        result_dict['fake_images'] = fake_images
+        result_dict['fake_images_reconstructed'] = fake_images_reconstructed
+        result_dict['real_images'] = images
+
         if i % save_frequency == 0 and i > 0:
-            print('\rImages seen: {}\t'
-                  'local_step: {}, global step: {}, gen_loss: {:.6f}, disc_loss: {:.6f}, enc_loss: {:.6f}, alpha:{:.3f}'
-                  .format(train_dict['num_images_so_far'],
-                          i, global_step, result_dict['generator_loss'], result_dict['discriminator_loss'],
-                          result_dict['encoder_loss'],
-                          result_dict['alpha']))
             summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
                          max_images=max_images, result_dir=result_dir)
             manager.save()
+
         """
         # Temporarily limit the number of iterations for debugging purposes
         if i > 5 and im_size==4:
             break
         """
+
     # Complete with this iteration
     summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
                  max_images=max_images, result_dir=result_dir)
@@ -129,9 +172,3 @@ for lod in range(2, n_blocks):
     lod_generators[0].save(os.path.join(result_dir, 'generator.h5'))
     lod_discriminators[0].save(os.path.join(result_dir, 'discriminator.h5'))
     lod_encoders[0].save(os.path.join(result_dir, 'encoder.h5'))
-    print('\nImages seen: {}\t'
-          'local_step: {}, global step: {}, gen_loss: {:06f}, disc_loss: {:06f}, enc_loss: {:06f}, alpha: {:03f} '
-          .format(train_dict['num_images_so_far'],
-                  i, global_step, result_dict['generator_loss'], result_dict['discriminator_loss'],
-                  result_dict['encoder_loss'],
-                  result_dict['alpha']))

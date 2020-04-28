@@ -1,6 +1,8 @@
 import tensorflow as tf
 from tensorflow.keras.backend import concatenate as Concatenate
-from tensorflow.keras.layers import Layer, Add
+import tensorflow.keras.backend as K
+from tensorflow.keras.layers import Layer, Add, Conv2D
+import numpy as np
 
 
 # weighted sum output
@@ -82,3 +84,22 @@ class MinibatchStdev(Layer):
         input_shape[-1] += 1
         # convert list to a tuple
         return tuple(input_shape)
+
+
+
+class WScaleConv2DLayer(Conv2D):
+    def __init__(self, *args, **kwargs):
+        super(WScaleConv2DLayer, self).__init__(*args, **kwargs)
+
+    def build(self, input_shape):
+        super().build(input_shape)
+        kernel_shape = K.int_shape(self.kernel)
+        std = np.sqrt(2) / np.sqrt( np.prod(kernel_shape[:-1]) )
+        self.wscale = K.constant(std, dtype=K.floatx() )
+
+    def call(self, input, training=True, **kwargs):
+        k = self.kernel
+        self.kernel = self.kernel*self.wscale
+        x = super().call(input,**kwargs)
+        self.kernel = k
+        return x

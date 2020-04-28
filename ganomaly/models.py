@@ -9,8 +9,14 @@ from tensorflow.keras.layers import AveragePooling2D
 from tensorflow.keras.layers import LeakyReLU
 from tensorflow.keras import backend
 from ganomaly.layers import WeightedSum, PixelNormalization, MinibatchStdev
+from ganomaly.layers import WScaleConv2DLayer as WScaleLayer
 import tensorflow as tf
 
+
+init = tf.keras.initializers.VarianceScaling()   # weight initialization
+#const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)          # weight constraint
+const=None
+LATENT_DEPTHS = {'4': 512, '8': 512, '16': 512, '32': 512, '64': 256, '128': 128, '256': 64, '512': 32, '1024': 16}
 
 # update the alpha value on each instance of WeightedSum
 def update_fadein(models, alpha=0):
@@ -24,23 +30,21 @@ def update_fadein(models, alpha=0):
 # add a discriminator block
 # noinspection DuplicatedCode
 def add_discriminator_block(old_model, n_input_layers=3):
-    # weight initialization
-    init = tf.keras.initializers.he_normal()
-    # weight constraint
-    const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)
     # get shape of existing model
     in_shape = list(old_model.input.shape)
     # define new input shape as double the size
     input_shape = (in_shape[-2] * 2, in_shape[-2] * 2, in_shape[-1])
     in_image = Input(shape=input_shape)
+    latent_depth = int(LATENT_DEPTHS[str(input_shape[-2])])
+    latent_depth_next = int(LATENT_DEPTHS[str(in_shape[-2])])
     # define new input processing layer
     # FROM RGB
-    d = Conv2D(128, (1, 1), padding='same', kernel_initializer=init, kernel_constraint=const)(in_image)
+    d = WScaleLayer(latent_depth, (1, 1), padding='same', kernel_initializer=init, kernel_constraint=const)(in_image)
     d = LeakyReLU(alpha=0.2)(d)
     # define new block
-    d = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
+    d = WScaleLayer(latent_depth, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
     d = LeakyReLU(alpha=0.2)(d)
-    d = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
+    d = WScaleLayer(latent_depth_next, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
     d = LeakyReLU(alpha=0.2)(d)
     d = AveragePooling2D()(d)
     block_new = d
@@ -67,29 +71,27 @@ def add_discriminator_block(old_model, n_input_layers=3):
 
 # define the discriminator models for each image resolution
 def define_discriminator(n_blocks, latent_dim=None, input_shape=(4, 4, 3), style='discriminator'):
-    # weight initialization
-    init = tf.keras.initializers.he_normal()
-    # weight constraint
-    const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)
+    latent_depth = int(LATENT_DEPTHS[str(input_shape[-2])])
     model_list = list()
     # base model input
     in_image = Input(shape=input_shape)
     # conv 1x1
-    d = Conv2D(128, (1, 1), padding='same', kernel_initializer=init, kernel_constraint=const)(in_image)
+    d = WScaleLayer(latent_depth, (1, 1), padding='same', kernel_initializer=init, kernel_constraint=const)(in_image)
     d = LeakyReLU(alpha=0.2)(d)
     # conv 3x3 (output block)
-    d = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
+    d = WScaleLayer(latent_depth, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
     d = LeakyReLU(alpha=0.2)(d)
     # conv 4x4
-    d = Conv2D(128, (4, 4), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
+    d = WScaleLayer(latent_depth, (4, 4), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
+    #d = WScaleLayer()(d)
     d = LeakyReLU(alpha=0.2)(d)
     # dense output layer
     d = MinibatchStdev()(d)
     d = Flatten()(d)
     if style == 'discriminator':
-        out_class = Dense(1, activation='sigmoid')(d)
+        out_class = Dense(1, activation=None, kernel_initializer=init, kernel_constraint=const)(d)
     else:
-        out_class = Dense(latent_dim)(d)
+        out_class = Dense(latent_dim, kernel_initializer=init, kernel_constraint=const)(d)
     # define model
     model = Model(in_image, out_class)
 
@@ -109,18 +111,15 @@ def define_discriminator(n_blocks, latent_dim=None, input_shape=(4, 4, 3), style
 # add a generator block
 # noinspection DuplicatedCode
 def add_generator_block(old_model):
-    # weight initialization
-    init = tf.keras.initializers.he_normal()
-    # weight constraint
-    const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)
     # get the end of the last block
     block_end = old_model.layers[-2].output
     # upsample, and define new block
     upsampling = UpSampling2D()(block_end)
-    g = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(upsampling)
+    latent_depth = int(LATENT_DEPTHS[str(upsampling.shape[-2])])
+    g = WScaleLayer(latent_depth, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(upsampling)
     g = PixelNormalization()(g)
     g = LeakyReLU(alpha=0.2)(g)
-    g = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
+    g = WScaleLayer(latent_depth, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
     g = PixelNormalization()(g)
     g = LeakyReLU(alpha=0.2)(g)
     # add new output layer
@@ -141,26 +140,26 @@ def add_generator_block(old_model):
 # define generator models
 # noinspection DuplicatedCode
 def define_generator(latent_dim, n_blocks, in_dim=4):
-    # weight initialization
-    init = tf.keras.initializers.he_normal()
-    # weight constraint
-    const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)
+    latent_depth = int(LATENT_DEPTHS['4'])
+
     model_list = list()
     # base model latent input
     in_latent = Input(shape=(latent_dim,))
+    g = PixelNormalization()(in_latent)
     # linear scale up to activation maps
-    g = Dense(128 * in_dim * in_dim, kernel_initializer=init, kernel_constraint=const)(in_latent)
-    g = Reshape((in_dim, in_dim, 128))(g)
+    g = Dense(latent_depth * in_dim * in_dim, kernel_initializer=init, kernel_constraint=const)(g)
+    g = Reshape((in_dim, in_dim, latent_depth))(g)
     # conv 4x4, input block
-    g = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
+    g = WScaleLayer(latent_depth, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
     g = PixelNormalization()(g)
     g = LeakyReLU(alpha=0.2)(g)
     # conv 3x3
-    g = Conv2D(128, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
+    g = WScaleLayer(latent_depth, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
     g = PixelNormalization()(g)
     g = LeakyReLU(alpha=0.2)(g)
     # conv 1x1, output block
     out_image = Conv2D(3, (1, 1), padding='same',activation='tanh', kernel_initializer=init, kernel_constraint=const)(g)
+
     # define model
     model = Model(in_latent, out_image)
     # store model

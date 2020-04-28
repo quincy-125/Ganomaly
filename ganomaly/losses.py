@@ -6,62 +6,49 @@ bce = tf.keras.losses.BinaryCrossentropy(from_logits=True, label_smoothing=0.3)
 # Fake should be 0
 
 def generator_loss(fake_classification):
-    gen_loss = bce(tf.ones_like(fake_classification), fake_classification)
+    gen_loss = -tf.math.reduce_mean(fake_classification) + 1e-8
     return gen_loss
 
 
-def discriminator_loss(real_classification, fake_classification):
+def gradient_penalty_loss(y_pred, y_average):
+    gradients = tf.gradients(y_pred, y_average)[0]
+    gradients_sqr = tf.square(gradients)
+    gradients_sqr_sum = tf.reduce_sum(gradients_sqr, axis=np.arange(1, len(gradients_sqr.shape)))
+    gradients_l2_norm = tf.sqrt(gradients_sqr_sum)
+    gradient_penalty = tf.square(gradients_l2_norm)
+    return tf.reduce_mean(gradient_penalty)
+
+
+def discriminator_loss(real_classification, fake_classification, interpolated_classification, interpolated_img, lambda_=10):
     fake_score = tf.reduce_mean(fake_classification)
     real_score = tf.reduce_mean(real_classification)
 
-    cel_real = bce(tf.ones_like(real_classification), real_classification)
-    cel_fake = bce(tf.zeros_like(fake_classification), fake_classification)
-    disc_loss = tf.math.add(cel_real, cel_fake)
+    real_loss = -tf.reduce_mean(real_classification)
+    fake_loss = tf.reduce_mean(fake_classification)
+    gp_loss = gradient_penalty_loss(interpolated_classification, interpolated_img)
+    disc_loss = real_loss + fake_loss + gp_loss * lambda_
 
     return real_score, fake_score, disc_loss
 
 
 def encoder_loss(noise_dim, z_hat):
-    loss = tf.reduce_mean(tf.abs(noise_dim - z_hat))
+    loss = tf.math.reduce_mean(tf.abs(noise_dim - z_hat)) + 1e-8
+    loss = tf.clip_by_value(loss, -1e12, 1e12)  # Remove possible nan
     return loss
 
 def img_loss(fake_images, fake_images_reconstructed):
-    loss = tf.reduce_mean(tf.abs(fake_images - fake_images_reconstructed))
+    loss = tf.math.reduce_mean(tf.abs(fake_images - fake_images_reconstructed))
+    loss = tf.clip_by_value(loss, -1e12, 1e12)  # Remove possible nan
     return loss
 
+def epsilon_penalty(real_score, epsilon=0.001):
+    return tf.math.square(real_score) * epsilon
 
-def gp2(discriminator, x_tild=None, x=None, lamb=10):
-    # https://mc.ai/gan-wasserstein-gan-wgan-gp/
-
-    # e = Sample from 0,1.
-    epsilon = np.random.random_sample()
-    # x^ = (e*real) + ((1-e)*fake)
-    x_hat = tf.math.multiply(epsilon, x) + tf.math.multiply((1 - epsilon), x_tild)
-    # get partial from new fake img
-    with tf.GradientTape() as t:
-        t.watch(x_hat)
-        pred = discriminator(x_hat)
-    grad = t.gradient(tf.math.reduce_mean(pred), discriminator.trainable_variables)
-    #   l2 norm grad
-    grad = tf.math.l2_normalize(grad)
-    # subtract 1
-    grad = tf.math.subtract(1, grad)
-    # square
-    grad = tf.math.square(grad)
-    # multiply by lamda
-    return tf.math.multiply(lamb, grad)
+def lerp(a, b, t):
+        return a + (b - a) * t
 
 
-def gradient_penalty(discriminator, batch_x, fake_image):
-    batch_size = batch_x.shape[0] # [b, h, w, c]
-    t = tf.random.uniform([batch_size, 1, 1, 1]) # [b, 1, 1, 1] => [b, h, w, c]
-    t = tf.broadcast_to(t, batch_x.shape)
-    interpolate = t * batch_x + (1 - t) * fake_image
-    with tf.GradientTape() as tape:
-        tape.watch([interpolate])
-        d_interpolate_logits = discriminator(interpolate, training=True)
-    grads = tape.gradient(d_interpolate_logits, interpolate) # grads:[b, h, w, c] => [b, -1]
-    grads = tf.reshape(grads, [grads.shape[0], -1])
-    gp = tf.norm(grads, axis=1) # [b]
-    gp = tf.reduce_mean((gp - 1) ** 2)
-    return gp
+def interpolate_imgs(real_imgs, fake_imgs, batch_size):
+    epsilon = np.random.uniform(0, 1, size=(batch_size, 1, 1, 1))
+    interpolation = epsilon * real_imgs + (1 - epsilon) * fake_imgs
+    return interpolation
