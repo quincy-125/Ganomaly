@@ -50,7 +50,7 @@ def train_encoder(encoder, generator, encoder_optimizer, input_noise):
     return enc_loss, fake_images, fake_images_reconstructed
 
 
-def summary_func(writer, i, local_step, im_size, result_dict, alpha=0, max_images=1, result_dir='.'):
+def summary_func(writer, i, local_step, im_size, result_dict, max_images=1, result_dir='.'):
     def write_image_file(key_name=None, images=None, sub_img_size=800):
 
         if images.shape[0] > max_images:
@@ -73,11 +73,14 @@ def summary_func(writer, i, local_step, im_size, result_dict, alpha=0, max_image
     with writer.as_default():
         tf.summary.scalar('global_step', i, step=i)
         tf.summary.scalar('local_step', local_step, step=i)
-        tf.summary.scalar('alpha', alpha, step=i)
 
         for k in result_dict.keys():
             if k.endswith('loss') or k.endswith('alpha') or k.endswith('avg'):
-                tf.summary.scalar(k, result_dict[k], step=i)
+                try:
+                    tf.summary.scalar(k, result_dict[k], step=i)
+                except ValueError:
+                    print(f'Unable to save {k} with value of {result_dict[k]}')
+
             elif k.endswith('images'):
                 tf.summary.image(k, result_dict[k], step=i, max_outputs=max_images)
                 imgs = tf.math.add(tf.math.multiply(result_dict[k].numpy(), 127.5), 127.5)

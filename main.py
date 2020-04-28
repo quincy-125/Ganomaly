@@ -105,7 +105,7 @@ for lod in range(2, n_blocks):
 
     # """
     result_dict = None
-    i = None
+    i = 0
     for i, images in enumerate(scaled_data):
         global_step += 1
         train_dict['step'] = i
@@ -127,6 +127,10 @@ for lod in range(2, n_blocks):
             discriminator = train_dict['discriminator_full']
             encoder = train_dict['encoder_full']
 
+
+
+        # The discriminator always gets updated, but sometimes you want the generator to learn slower than discriminator
+        # so you set n_critic, which limits the frequency of generator/encoder learning
         input_noise = tf.random.normal([batch_size, latent_dim])
 
         disc_loss, real_score, fake_score = train_discriminator(discriminator, generator, discriminator_optimizer,
@@ -137,7 +141,7 @@ for lod in range(2, n_blocks):
             enc_loss, fake_images, fake_images_reconstructed = train_encoder(encoder, generator, encoder_optimizer,
                                                                              input_noise)
             print(
-                f'{i}, gen_loss: {gen_loss.numpy():.5f}, disc_loss: {disc_loss.numpy():.5f}, '
+                f'{i:07d}, gen_loss: {gen_loss.numpy():.5f}, disc_loss: {disc_loss.numpy():.5f}, '
                 f'enc_loss: {enc_loss.numpy():.5f}, alpha:{alpha:.3f}, '
                 f'real_score:{real_score:.3f}, fake_score:{fake_score:.3f}')
         else:
@@ -155,7 +159,17 @@ for lod in range(2, n_blocks):
         result_dict['real_images'] = images
 
         if i % save_frequency == 0 and i > 0:
-            summary_func(writer, global_step, i, im_size, result_dict, alpha=train_dict['alpha'],
+            if gen_loss is None:
+                gen_loss = train_generator(generator, discriminator, generator_optimizer, input_noise)
+                enc_loss, fake_images, fake_images_reconstructed = train_encoder(encoder, generator, encoder_optimizer,
+                                                                             input_noise)
+                result_dict['generator_loss'] = gen_loss
+                result_dict['encoder_loss'] = enc_loss
+                result_dict['fake_images'] = fake_images
+                result_dict['fake_images_reconstructed'] = fake_images_reconstructed
+
+
+            summary_func(writer, global_step, i, im_size, result_dict,
                          max_images=max_images, result_dir=result_dir)
             manager.save()
 
