@@ -1,4 +1,4 @@
-from ganomaly.losses import generator_loss, discriminator_loss, img_loss, epsilon_penalty, encoder_loss, interpolate_imgs
+from ganomaly.losses import generator_loss, discriminator_loss, img_loss, gradient_penalty_loss, interpolate_imgs
 import numpy as np
 import os
 from matplotlib import pyplot
@@ -6,7 +6,25 @@ from math import sqrt
 from PIL import Image
 import tensorflow as tf
 
-@tf.function
+
+def train_step(images, generator, discriminator, encoder, batch_size, latent_dim,
+               generator_optimizer,discriminator_optimizer, encoder_optimizer,
+               n_critic=2, i=1):
+    input_noise = tf.random.normal([batch_size, latent_dim])
+    disc_loss, real_score, fake_score = train_discriminator(discriminator, generator, discriminator_optimizer,
+                                                            images, input_noise, batch_size)
+    enc_loss, fake_images_reconstructed = train_encoder(encoder, generator, encoder_optimizer,
+                                                        images)
+    if i % n_critic == 0:
+        gen_loss, fake_images = train_generator(generator, discriminator, generator_optimizer, input_noise)
+    else:
+        gen_loss=None
+        fake_images=images
+
+    return input_noise, disc_loss, real_score, fake_score, enc_loss, fake_images, gen_loss, fake_images_reconstructed
+
+
+
 def train_generator(generator, discriminator, generator_optimizer, input_noise):
     with tf.GradientTape() as gen_tape:
         generated_imgs = generator(input_noise, training=True)
@@ -16,19 +34,28 @@ def train_generator(generator, discriminator, generator_optimizer, input_noise):
     grad_gen = gen_tape.gradient(gen_loss, generator.trainable_variables)
     generator_optimizer.apply_gradients(zip(grad_gen, generator.trainable_variables))
 
-    return gen_loss
+    return gen_loss, generated_imgs
 
 
-@tf.function
-def train_discriminator(discriminator, generator, discriminator_optimizer, images, noise, batch_size):
+def train_discriminator(discriminator, generator, discriminator_optimizer, images, noise, batch_size, _lambda=10.0):
 
     with tf.GradientTape() as disc_tape:
         generated_imgs = generator(noise, training=True)
         generated_output = discriminator(generated_imgs, training=True)
         real_output = discriminator(images, training=True)
-        interpolated_img = interpolate_imgs(images, generated_imgs, batch_size)
-        validity_interpolated = discriminator(interpolated_img, training=True)
-        real_score, fake_score, disc_loss = discriminator_loss(real_output, generated_output, validity_interpolated, interpolated_img)
+
+        with tf.GradientTape() as interp_tape:
+            interp_tape.watch(real_output)
+            interp_tape.watch(generated_output)
+            interp_tape.watch(generated_imgs)
+
+            interpolated_img = interpolate_imgs(images, generated_imgs, batch_size)
+            validity_interpolated = discriminator(interpolated_img, training=True)
+            real_score, fake_score, disc_loss = discriminator_loss(real_output, generated_output)
+
+            grads = interp_tape.gradient(validity_interpolated, interpolated_img)
+        grad_penalty = gradient_penalty_loss(grads)
+        disc_loss += 0.5 * _lambda * grad_penalty
 
     grad_disc = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
     discriminator_optimizer.apply_gradients(zip(grad_disc, discriminator.trainable_variables))
@@ -36,18 +63,17 @@ def train_discriminator(discriminator, generator, discriminator_optimizer, image
     return disc_loss, real_score, fake_score
 
 
-def train_encoder(encoder, generator, encoder_optimizer, input_noise):
+def train_encoder(encoder, generator, encoder_optimizer, images):
 
     with tf.GradientTape() as enc_tape:
-        fake_images = generator(input_noise, training=True)
-        z_hat = encoder(fake_images, training=True)
+        z_hat = encoder(images, training=True)
         fake_images_reconstructed = generator(z_hat, training=True)
-        enc_loss = img_loss(fake_images, fake_images_reconstructed)
+        enc_loss = img_loss(images, fake_images_reconstructed)
 
     grad_enc = enc_tape.gradient(enc_loss, encoder.trainable_variables)
     encoder_optimizer.apply_gradients(zip(grad_enc, encoder.trainable_variables))
 
-    return enc_loss, fake_images, fake_images_reconstructed
+    return enc_loss, fake_images_reconstructed
 
 
 def summary_func(writer, i, local_step, im_size, result_dict, max_images=1, result_dir='.'):

@@ -12,11 +12,11 @@ from ganomaly.layers import WeightedSum, PixelNormalization, MinibatchStdev
 from ganomaly.layers import WScaleConv2DLayer as WScaleLayer
 import tensorflow as tf
 
-
-init = tf.keras.initializers.VarianceScaling()   # weight initialization
-#const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)          # weight constraint
-const=None
+init = tf.keras.initializers.VarianceScaling()  # weight initialization
+# const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)          # weight constraint
+const = None
 LATENT_DEPTHS = {'4': 512, '8': 512, '16': 512, '32': 512, '64': 256, '128': 128, '256': 64, '512': 32, '1024': 16}
+
 
 # update the alpha value on each instance of WeightedSum
 def update_fadein(models, alpha=0):
@@ -70,6 +70,7 @@ def add_discriminator_block(old_model, n_input_layers=3):
 
 
 # define the discriminator models for each image resolution
+# noinspection DuplicatedCode
 def define_discriminator(n_blocks, latent_dim=None, input_shape=(4, 4, 3), style='discriminator'):
     latent_depth = int(LATENT_DEPTHS[str(input_shape[-2])])
     model_list = list()
@@ -83,7 +84,7 @@ def define_discriminator(n_blocks, latent_dim=None, input_shape=(4, 4, 3), style
     d = LeakyReLU(alpha=0.2)(d)
     # conv 4x4
     d = WScaleLayer(latent_depth, (4, 4), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
-    #d = WScaleLayer()(d)
+    # d = WScaleLayer()(d)
     d = LeakyReLU(alpha=0.2)(d)
     # dense output layer
     d = MinibatchStdev()(d)
@@ -158,7 +159,8 @@ def define_generator(latent_dim, n_blocks, in_dim=4):
     g = PixelNormalization()(g)
     g = LeakyReLU(alpha=0.2)(g)
     # conv 1x1, output block
-    out_image = Conv2D(3, (1, 1), padding='same',activation='tanh', kernel_initializer=init, kernel_constraint=const)(g)
+    out_image = Conv2D(3, (1, 1), padding='same', activation='tanh', kernel_initializer=init, kernel_constraint=const)(
+        g)
 
     # define model
     model = Model(in_latent, out_image)

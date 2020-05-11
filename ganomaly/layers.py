@@ -86,7 +86,6 @@ class MinibatchStdev(Layer):
         return tuple(input_shape)
 
 
-
 class WScaleConv2DLayer(Conv2D):
     def __init__(self, *args, **kwargs):
         super(WScaleConv2DLayer, self).__init__(*args, **kwargs)
@@ -94,12 +93,12 @@ class WScaleConv2DLayer(Conv2D):
     def build(self, input_shape):
         super().build(input_shape)
         kernel_shape = K.int_shape(self.kernel)
-        std = np.sqrt(2) / np.sqrt( np.prod(kernel_shape[:-1]) )
-        self.wscale = K.constant(std, dtype=K.floatx() )
+        std = np.sqrt(2) / np.sqrt(np.prod(kernel_shape[:-1]))
+        self.wscale = K.constant(std, dtype=K.floatx())
 
     def call(self, input, training=True, **kwargs):
         k = self.kernel
-        self.kernel = self.kernel*self.wscale
-        x = super().call(input,**kwargs)
+        self.kernel = self.kernel * self.wscale
+        x = super().call(input, **kwargs)
         self.kernel = k
         return x

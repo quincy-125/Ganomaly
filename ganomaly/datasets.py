@@ -22,10 +22,10 @@ def parse_tfrecord_tf(record):
         'data': tf.io.FixedLenFeature([], tf.string)})
     data = tf.io.decode_raw(features['data'], tf.uint8)
     data = tf.reshape(data, features['shape'])
-    # Comvert to channels last format
+    # Convert to channels last format
     data = tf.transpose(data, [1, 2, 0])
     data = tf.cast(data, tf.float32)
-    data = tf.math.divide(tf.math.subtract(data, 127.5), 127.5)  # Scale from 0-255 to 0-1
+    data = tf.math.divide(tf.math.subtract(data, 127.5), 127.5)  # Scale from 0-255 to [-1,-1]
     return data
 
 
