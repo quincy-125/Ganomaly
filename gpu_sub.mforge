@@ -2,14 +2,14 @@
 #$ -N SteveTest
 #$ -q gpu-long
 #$ -l gpu=1
-#$ -o outlog
-#$ -e errlog
+#$ -o outlog_log
+#$ -e errlog_long
 #$ -M hart.steven@mayo.edu
 #$ -m ae
 #$ -notify
 #$ -V
 #$ -cwd
-#$ -l h_vmem=25G
+#$ -l h_vmem=125G
 set -x
 
 python /research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Code/Ganomaly/main.py

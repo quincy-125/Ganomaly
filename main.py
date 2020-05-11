@@ -10,17 +10,17 @@ max_images = 4  # Tensorboard
 save_frequency = 100  # After how many steps should we save a checkpoint and summary
 number_of_images_to_fade = 500000  # How many images should be faded
 # noinspection PyPep8,PyPep8,PyPep8,PyPep8
-input_dir = 'D:\PyCharm_Projects\Ganomaly\data\\train_data'
-#input_dir = '/research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Quincy/Data/train_data'
+#input_dir = 'D:\PyCharm_Projects\Ganomaly\data\\train_data'
+input_dir = '/research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Quincy/Data/train_data'
 img_size = 4  # Beginning image size
 n_blocks = 8  # how many doublings to do from size 4x4x3
 latent_dim = 512  # for encoder
 checkpoint_name = 'training_checkpoints'
-BATCH_SIZES = {'4': 512, '8': 128, '16': 64, '32': 4, '64': 2, '128': 2, '256': 2, '512': 2, '1024': 1}
+BATCH_SIZES = {'4': 512, '8': 128, '16': 64, '32': 8, '64': 8, '128': 8, '256': 8, '512': 6, '1024': 3}
 EPOCH_SIZES = {'4': 1, '8': 1, '16': 1, '32': 1, '64': 1, '128': 5, '256': 5, '512': 5, '1024': 5}
 learning_rate = 0.001
 label_flip_rate = 0.05
-n_critic = 5
+n_critic = 1
 
 result_dir_components = ['results', learning_rate, label_flip_rate, latent_dim, n_critic]
 result_dir = '_'.join([str(x) for x in result_dir_components])
