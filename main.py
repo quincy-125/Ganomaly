@@ -3,7 +3,7 @@ import os
 import tensorflow as tf
 from ganomaly.datasets import get_dataset
 from ganomaly.models import define_discriminator, define_generator, update_fadein
-from ganomaly.steps import train_step, train_generator, summary_func
+from ganomaly.steps import train_step, summary_func
 
 color_channels = 3
 max_images = 4  # Tensorboard
@@ -127,7 +127,8 @@ for lod in range(2, n_blocks):
             discriminator = train_dict['discriminator_full']
             encoder = train_dict['encoder_full']
 
-        input_noise, disc_loss, real_score, fake_score, enc_loss, fake_images, gen_loss, fake_images_reconstructed = train_step(images,
+        real_score, fake_score, enc_loss, gen_loss, disc_loss, images, fake_images, images_reconstructed, \
+        fake_images_reconstructed = train_step(images,
                                                                                                      generator,
                                                                                                      discriminator,
                                                                                                      encoder,
@@ -135,11 +136,8 @@ for lod in range(2, n_blocks):
                                                                                                      latent_dim,
                                                                                                      generator_optimizer,
                                                                                                      discriminator_optimizer,
-                                                                                                     encoder_optimizer,
-                                                                                                     n_critic=n_critic,
-                                                                                                     i=i)
+                                                                                                     encoder_optimizer)
         result_dict = {
-            'input_noise': input_noise,
             'disc_loss': disc_loss,
             'real_score': real_score,
             'fake_score': fake_score,
@@ -147,28 +145,17 @@ for lod in range(2, n_blocks):
             'fake_images': fake_images,
             'real_images': images,
             'gen_loss': gen_loss,
-            'reconstructed_images': fake_images_reconstructed,
+            'reconstructed_images': images_reconstructed,
+            'fake_reconstructed_images': fake_images_reconstructed,
             'alpha': alpha
         }
-        try:
-            print(
-                f'\r{i:07d}, KImage: {int(num_images_so_far / 1000):07d}, '
-                f'gen_loss: {gen_loss.numpy():.5f}, disc_loss: {disc_loss.numpy():.5f}, '
-                f'enc_loss: {enc_loss.numpy():.5f}, alpha:{alpha:.3f}, '
-                f'real_score:{real_score:.3f}, fake_score:{fake_score:.3f}', end='')
-        except:
-            pass
+        tf.print(
+            f'\r{i:07d}, KImage: {int(num_images_so_far / 1000):07d}, '
+            f'gen_loss: {gen_loss.numpy():.5f}, disc_loss: {disc_loss.numpy():.5f}, '
+            f'enc_loss: {enc_loss.numpy():.5f}, alpha:{alpha:.3f}, '
+            f'real_score:{real_score:.3f}, fake_score:{fake_score:.3f}', end='')
+
         if i % save_frequency == 0 and i > 0:
-            if gen_loss is None:
-                gen_loss, fake_images = train_generator(generator, discriminator, generator_optimizer, input_noise)
-                result_dict['gen_loss'] = gen_loss
-
-            print(
-                f'\r{i:07d}, KImage: {int(num_images_so_far / 1000):07d}, '
-                f'gen_loss: {gen_loss.numpy():.5f}, disc_loss: {disc_loss.numpy():.5f}, '
-                f'enc_loss: {enc_loss.numpy():.5f}, alpha:{alpha:.3f}, '
-                f'real_score:{real_score:.3f}, fake_score:{fake_score:.3f}')
-
             summary_func(writer, global_step, i, im_size, result_dict,
                          max_images=max_images, result_dir=result_dir)
             manager.save()

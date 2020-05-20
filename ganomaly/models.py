@@ -92,7 +92,7 @@ def define_discriminator(n_blocks, latent_dim=None, input_shape=(4, 4, 3), style
     if style == 'discriminator':
         out_class = Dense(1, activation=None, kernel_initializer=init, kernel_constraint=const)(d)
     else:
-        out_class = Dense(latent_dim, kernel_initializer=init, kernel_constraint=const)(d)
+        out_class = Dense(latent_dim)(d)
     # define model
     model = Model(in_image, out_class)
 
