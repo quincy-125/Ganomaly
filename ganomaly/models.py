@@ -4,76 +4,19 @@ from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Flatten
 from tensorflow.keras.layers import Reshape
 from tensorflow.keras.layers import Conv2D
-from tensorflow.keras.layers import UpSampling2D
-from tensorflow.keras.layers import AveragePooling2D
 from tensorflow.keras.layers import LeakyReLU
-from tensorflow.keras import backend
-from ganomaly.layers import WeightedSum, PixelNormalization, MinibatchStdev
+from ganomaly.layers import PixelNormalization, MinibatchStdev
 from ganomaly.layers import WScaleConv2DLayer as WScaleLayer
 import tensorflow as tf
 
 init = tf.keras.initializers.VarianceScaling()  # weight initialization
-# const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)          # weight constraint
-const = None
-LATENT_DEPTHS = {'4': 512, '8': 512, '16': 512, '32': 512, '64': 256, '128': 128, '256': 64, '512': 32, '1024': 16}
-
-
-# update the alpha value on each instance of WeightedSum
-def update_fadein(models, alpha=0):
-    # update the alpha for each model
-    for model in models:
-        for layer in model.layers:
-            if isinstance(layer, WeightedSum):
-                backend.set_value(layer.alpha, alpha)
-
-
-# add a discriminator block
-# noinspection DuplicatedCode
-def add_discriminator_block(old_model, n_input_layers=3):
-    # get shape of existing model
-    in_shape = list(old_model.input.shape)
-    # define new input shape as double the size
-    input_shape = (in_shape[-2] * 2, in_shape[-2] * 2, in_shape[-1])
-    in_image = Input(shape=input_shape)
-    latent_depth = int(LATENT_DEPTHS[str(input_shape[-2])])
-    latent_depth_next = int(LATENT_DEPTHS[str(in_shape[-2])])
-    # define new input processing layer
-    # FROM RGB
-    d = WScaleLayer(latent_depth, (1, 1), padding='same', kernel_initializer=init, kernel_constraint=const)(in_image)
-    d = LeakyReLU(alpha=0.2)(d)
-    # define new block
-    d = WScaleLayer(latent_depth, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
-    d = LeakyReLU(alpha=0.2)(d)
-    d = WScaleLayer(latent_depth_next, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(d)
-    d = LeakyReLU(alpha=0.2)(d)
-    d = AveragePooling2D()(d)
-    block_new = d
-
-    # skip the input, 1x1 and activation for the old model
-    for i in range(n_input_layers, len(old_model.layers)):
-        d = old_model.layers[i](d)
-
-    model1 = Model(in_image, d)
-
-    # Downsample and convert from RGB
-    downsample = AveragePooling2D()(in_image)
-    block_old = old_model.layers[1](downsample)
-    block_old = old_model.layers[2](block_old)
-    d = WeightedSum()([block_old, block_new])
-
-    # skip the input, 1x1 and activation for the old model
-    for i in range(n_input_layers, len(old_model.layers)):
-        d = old_model.layers[i](d)
-
-    model2 = Model(in_image, d)
-    return [model1, model2]
+const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)  # weight constraint
 
 
 # define the discriminator models for each image resolution
 # noinspection DuplicatedCode
 def define_discriminator(latent_dim=None, input_shape=(4, 4, 3), style='discriminator'):
-    latent_depth = int(LATENT_DEPTHS[str(input_shape[-2])])
-    model_list = list()
+    latent_depth = latent_dim
     # base model input
     in_image = Input(shape=input_shape)
     # conv 1x1
@@ -91,48 +34,19 @@ def define_discriminator(latent_dim=None, input_shape=(4, 4, 3), style='discrimi
     d = Flatten()(d)
     if style == 'discriminator':
         out_class = Dense(1, activation=None, kernel_initializer=init, kernel_constraint=const, name='d_out')(d)
-        name='disc'
+        name = 'disc'
     else:
         out_class = Dense(latent_dim, kernel_initializer=init, kernel_constraint=const, name='e_out')(d)
-        name='enc'
+        name = 'enc'
     model = Model(in_image, out_class, name=name)
     return model
-
-
-# add a generator block
-# noinspection DuplicatedCode
-def add_generator_block(old_model):
-    # get the end of the last block
-    block_end = old_model.layers[-2].output
-    # upsample, and define new block
-    upsampling = UpSampling2D()(block_end)
-    latent_depth = int(LATENT_DEPTHS[str(upsampling.shape[-2])])
-    g = WScaleLayer(latent_depth, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(upsampling)
-    g = PixelNormalization()(g)
-    g = LeakyReLU(alpha=0.2)(g)
-    g = WScaleLayer(latent_depth, (3, 3), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
-    g = PixelNormalization()(g)
-    g = LeakyReLU(alpha=0.2)(g)
-    # add new output layer
-    out_image = Conv2D(3, (1, 1), padding='same', kernel_initializer=init, kernel_constraint=const)(g)
-    # define model
-    model1 = Model(old_model.input, out_image)
-    # get the output layer from old model
-    out_old = old_model.layers[-1]
-    # connect the upsampling to the old output layer
-    out_image2 = out_old(upsampling)
-    # define new output image as the weighted sum of the old and new models
-    merged = WeightedSum(name='g_out')([out_image2, out_image])
-    # define model
-    model2 = Model(old_model.input, merged)
-    return [model1, model2]
 
 
 # define generator models
 # noinspection DuplicatedCode
 def define_generator(latent_dim, in_dim=4):
     # base model latent input
-    in_latent = Input(shape=(latent_dim))
+    in_latent = Input(shape=latent_dim)
     g = PixelNormalization()(in_latent)
     # linear scale up to activation maps
     g = Dense(latent_dim * in_dim * in_dim, kernel_initializer=init, kernel_constraint=const)(g)
@@ -153,10 +67,10 @@ def define_generator(latent_dim, in_dim=4):
 
 
 def build_integrated_model(img_size, latent_dim, color_channels=3):
-    input_shape = (img_size,img_size,color_channels)
+    input_shape = (img_size, img_size, color_channels)
     G = define_generator(latent_dim)
     D = define_discriminator(latent_dim=latent_dim, input_shape=input_shape, style='discriminator')
-    E = define_discriminator(latent_dim=latent_dim, input_shape=input_shape,       style='encoder')
+    E = define_discriminator(latent_dim=latent_dim, input_shape=input_shape, style='encoder')
     return G, D, E
 
 
@@ -178,6 +92,7 @@ class Discriminator(tf.keras.layers.Layer):
     def call(self, input, training=None):
         return self.discriminator(input)
 
+
 class Encoder(tf.keras.layers.Layer):
     def __init__(self, latent_dim, input_shape, name='enc', **kwargs):
         super(Encoder, self).__init__(name=name, **kwargs)
@@ -189,13 +104,14 @@ class Encoder(tf.keras.layers.Layer):
         return recoded_images
 
 
+# noinspection PyMethodOverriding
 class AnnoGAN(tf.keras.Model):
     # https://keras.io/examples/generative/dcgan_overriding_train_step/
     # https://www.tensorflow.org/guide/keras/custom_layers_and_models
     # https: // www.tensorflow.org / guide / keras / customizing_what_happens_in_fit
     def __init__(self, img_size, latent_dim, loss_fn, color_channels=3, name='annogan', **kwargs):
         super(AnnoGAN, self).__init__(name=name, **kwargs)
-        input_shape = (img_size,img_size, color_channels)
+        input_shape = (img_size, img_size, color_channels)
         self.discriminator = Discriminator(latent_dim, input_shape)
         self.encoder = Encoder(latent_dim, input_shape)
         self.generator = Generator(latent_dim)
@@ -203,7 +119,6 @@ class AnnoGAN(tf.keras.Model):
         self.latent_dim = latent_dim
 
     def call(self, real_images, training=None):
-
         if isinstance(real_images, tuple):
             real_images = real_images[0]
 
@@ -245,7 +160,7 @@ class AnnoGAN(tf.keras.Model):
         # of the discriminator)!
         with tf.GradientTape() as tape:
             predictions = self.discriminator(self.generator(random_latent_vectors))
-            _loss =loss_fn['g_out']
+            _loss = loss_fn['g_out']
             g_loss = _loss(misleading_labels, predictions)
         grads = tape.gradient(g_loss, self.generator.trainable_weights)
         self.g_optimizer.apply_gradients(zip(grads, self.generator.trainable_weights))
