@@ -10,13 +10,13 @@ max_images = 4  # Tensorboard
 save_frequency = 100  # After how many steps should we save a checkpoint and summary
 number_of_images_to_fade = 500000  # How many images should be faded
 # noinspection PyPep8,PyPep8,PyPep8,PyPep8
-#input_dir = 'D:\PyCharm_Projects\Ganomaly\data\\train_data'
-input_dir = '/research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Quincy/Data/train_data'
+input_dir = 'D:\PyCharm_Projects\Ganomaly\data\\train_data'
+#input_dir = '/research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Quincy/Data/train_data'
 img_size = 4  # Beginning image size
 n_blocks = 8  # how many doublings to do from size 4x4x3
 latent_dim = 512  # for encoder
 checkpoint_name = 'training_checkpoints'
-BATCH_SIZES = {'4': 512, '8': 128, '16': 64, '32': 8, '64': 8, '128': 8, '256': 8, '512': 6, '1024': 3}
+BATCH_SIZES = {'4': 512, '8': 300, '16': 60, '32': 15, '64': 4, '128': 2, '256': 4, '512': 2, '1024': 4}
 EPOCH_SIZES = {'4': 1, '8': 1, '16': 1, '32': 1, '64': 1, '128': 5, '256': 5, '512': 5, '1024': 5}
 learning_rate = 0.001
 label_flip_rate = 0.05
@@ -31,10 +31,12 @@ checkpoint_prefix = os.path.join(result_dir, checkpoint_name)
 # ####################################################################
 # Each of these returns a pair of models for each image size
 # [[size1_full, size1_fade], [size2_full, size2_fade]]
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+    discriminators = define_discriminator(n_blocks, latent_dim=latent_dim, input_shape=(4, 4, color_channels))
+    encoders = define_discriminator(n_blocks, latent_dim=latent_dim, input_shape=(4, 4, color_channels), style='encoder')
+    generators = define_generator(latent_dim, n_blocks)
 
-discriminators = define_discriminator(n_blocks, latent_dim=latent_dim, input_shape=(4, 4, color_channels))
-encoders = define_discriminator(n_blocks, latent_dim=latent_dim, input_shape=(4, 4, color_channels), style='encoder')
-generators = define_generator(latent_dim, n_blocks)
 
 generator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.0, beta_2=0.99, epsilon=1e-08)
 discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.0, beta_2=0.99, epsilon=1e-08)
@@ -173,11 +175,11 @@ for lod in range(2, n_blocks):
                          max_images=max_images, result_dir=result_dir)
             manager.save()
 
-        """
+        #"""
         # Temporarily limit the number of iterations for debugging purposes
-        if i > 5 and im_size==4:
+        if i > 5: #and im_size==4:
             break
-        """
+        #"""
     if result_dict['gen_loss'] is None:
         gen_loss, fake_images = train_generator(generator, discriminator, generator_optimizer, input_noise)
         result_dict['gen_loss'] = gen_loss

@@ -1,14 +1,32 @@
 import tensorflow as tf
 import numpy as np
 
-bce = tf.keras.losses.BinaryCrossentropy(from_logits=True, label_smoothing=0.3)
+bce = tf.keras.losses.BinaryCrossentropy(from_logits=False, label_smoothing=0.3)
+mse = tf.keras.losses.MeanSquaredError()
+
+class GeneratorLoss(tf.keras.losses.Loss):
+    def call(self, misleading_labels, predictions):
+        #gen_loss = -tf.math.reduce_mean(fake_classification) + 1e-8
+        #return gen_loss
+        return bce(misleading_labels, predictions)
+
+class DiscriminatorLoss(tf.keras.losses.Loss):
+    def call(self, true, pred):
+        print(f'D labels: {true}\nD predictions: {pred}')
+        exit()
+        return bce(true, pred)
 
 
-# Real score should be 1.0
-# Fake should be 0
+class EncoderLoss(tf.keras.losses.Loss):
 
-def generator_loss(fake_classification):
-    gen_loss = -tf.math.reduce_mean(fake_classification) + 1e-8
+    def call(self, true, pred):
+        return mse(tf.abs(true - pred))
+
+
+
+
+def generator_loss(truth, pred):
+    #gen_loss = -tf.math.reduce_mean(fake_classification) + 1e-8
     return gen_loss
 
 
@@ -31,13 +49,8 @@ def discriminator_loss(real_classification, fake_classification):
     return real_score, fake_score, disc_loss
 
 
-def encoder_loss(noise_dim, z_hat):
-    loss = tf.math.reduce_mean(tf.abs(noise_dim - z_hat)) + 1e-8
-    loss = tf.clip_by_value(loss, -1e12, 1e12)  # Remove possible nan
-    return loss
 
-
-def img_loss(fake_images, fake_images_reconstructed):
+def encoder_loss(fake_images, fake_images_reconstructed):
     loss = tf.math.reduce_mean(tf.abs(fake_images - fake_images_reconstructed))
     loss = tf.clip_by_value(loss, -1e12, 1e12)  # Remove possible nan
     return loss
@@ -51,7 +64,8 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 
-def interpolate_imgs(real_imgs, fake_imgs, batch_size):
-    epsilon = np.random.uniform(0, 1, size=(batch_size, 1, 1, 1))
+def interpolate_imgs(real_imgs, fake_imgs,batch_size):
+    #epsilon = np.random.uniform(0, 1, size=(batch_size, 1, 1, 1))
+    epsilon = tf.random.uniform(shape=(batch_size, 1, 1, 1), minval=0, maxval=1)
     interpolation = epsilon * real_imgs + (1 - epsilon) * fake_imgs
     return interpolation

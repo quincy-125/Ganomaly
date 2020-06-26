@@ -67,7 +67,7 @@ def train_encoder(encoder, generator, encoder_optimizer, images):
 
     with tf.GradientTape() as enc_tape:
         z_hat = encoder(images, training=True)
-        fake_images_reconstructed = generator(z_hat, training=True)
+        fake_images_reconstructed = generator(z_hat, training=False)
         enc_loss = img_loss(images, fake_images_reconstructed)
 
     grad_enc = enc_tape.gradient(enc_loss, encoder.trainable_variables)
