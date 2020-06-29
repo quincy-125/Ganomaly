@@ -10,10 +10,8 @@ def get_dataset(input_dir, batch_size, img_size, epochs=1, prefix='train_data-r'
 	assert os.path.exists(tfrecord_file), f"Cannot find file: {tfrecord_file}"
 	dataset = tf.data.TFRecordDataset(tfrecord_file)
 	dataset = dataset.map(lambda x: parse_tfrecord_tf(x))
-
 	dataset = dataset.batch(batch_size, drop_remainder=True)
 	dataset = dataset.repeat(epochs)
-
 	return dataset
 
 

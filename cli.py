@@ -7,7 +7,7 @@ import json
 from main import ganomaly
 import os
 
-BATCH_SIZES = {'4': 512, '8': 300, '16': 60, '32': 15, '64': 4, '128': 2, '256': 4, '512': 2, '1024': 4}
+BATCH_SIZES = {'4': 512, '8': 150, '16': 60, '32': 15, '64': 4, '128': 2, '256': 4, '512': 2, '1024': 4}
 EPOCH_SIZES = {'4': 1, '8': 1, '16': 1, '32': 1, '64': 1, '128': 5, '256': 5, '512': 5, '1024': 5}
 LATENT_DEPTHS = {'4': 512, '8': 512, '16': 512, '32': 512, '64': 256, '128': 128, '256': 64, '512': 32, '1024': 16}
 
@@ -72,7 +72,7 @@ def main():
 
     parser.add_argument("-f", "--fade_num",
                         dest='number_of_images_to_fade',
-                        default=500000,
+                        default=50000,
                         help="How many images should be faded during each resolution stage")
 
     parser.add_argument("-C", "--checkpoint_name",

@@ -15,7 +15,7 @@ const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)  # weight
 
 
 class ANNOGAN(tf.keras.Model):
-    def __init__(self, G, D, E, latent_dim):
+    def __init__(self, G, D, E, latent_dim, num_imgs_to_fade=5000):
         super(ANNOGAN, self).__init__()
         self.G = G
         self.D = D
@@ -23,11 +23,18 @@ class ANNOGAN(tf.keras.Model):
         self.G_fade = None
         self.E_fade = None
         self.D_fade = None
+        self.generator = None
+        self.discriminator = None
+        self.encoder = None
         self.latent_dim = latent_dim
         self.generator_optimizer = None
         self.discriminator_optimizer = None
         self.encoder_optimizer = None
-        self.alpha = 1
+        self.alpha = tf.Variable(1.0, dtype=tf.float32, name='alpha')
+        self.num_imgs_seen = tf.Variable(0, dtype=tf.int32, name='num_imgs_seen')
+        self.num_imgs_to_fade = num_imgs_to_fade
+        self.fade = tf.Variable(False, dtype=tf.float32, name='fade')
+        self.first_round = tf.Variable(True, name='first_round')
 
     # noinspection PyMethodOverriding
     def compile(self, generator_optimizer, discriminator_optimizer, encoder_optimizer, **kwargs):
@@ -39,41 +46,23 @@ class ANNOGAN(tf.keras.Model):
     def train_step(self, real_images, _lambda=10):
         # Sample random points in the latent space
         batch_size = tf.shape(real_images)[0]
-        random_latent_vectors = tf.random.normal(shape=(self.latent_dim, batch_size))
+        random_latent_vectors = tf.random.normal(shape=(batch_size, self.latent_dim))
 
+
+        # TODO: Use faded model or non-faded. DOES NOT WORK AS INTENDED!!!
         # determine whether or not to use the faded model
-        if self.alpha >= 1:
-            generator = self.G
-            discriminator = self.D
-            encoder = self.E
+        if self.fade is False:
+            return self._train(real_images, self.G, self.D, self.E, random_latent_vectors, batch_size)
         else:
-            generator = self.G_fade
-            discriminator = self.D_fade
-            encoder = self.E_fade
+            try:
+                return self._train(real_images, self.G_fade, self.D_fade, self.E_fade, random_latent_vectors, batch_size)
+            except:
+                return self._train(real_images, self.G, self.D, self.E, random_latent_vectors, batch_size)
 
-        #############################################################################
-        # Train Generator
-        #############################################################################
+        #res = self._train(real_images, self.G, self.D, self.E, random_latent_vectors, batch_size)
+        #return res
 
-        with tf.GradientTape() as gen_tape:
-            generated_imgs = generator(random_latent_vectors, training=True)
-            generated_output = discriminator(generated_imgs, training=False)
-            gen_loss = generator_loss(generated_output)
-
-        grad_gen = gen_tape.gradient(gen_loss, generator.trainable_variables)
-        self.generator_optimizer.apply_gradients(zip(grad_gen, generator.trainable_variables))
-
-        #############################################################################
-        # Train Encoder
-        #############################################################################
-        with tf.GradientTape() as enc_tape:
-            z_hat = encoder(real_images, training=True)
-            images_reconstructed = generator(z_hat, training=False)
-            enc_loss = encoder_loss(real_images, images_reconstructed)
-
-        grad_enc = enc_tape.gradient(enc_loss, encoder.trainable_variables)
-        self.encoder_optimizer.apply_gradients(zip(grad_enc, encoder.trainable_variables))
-
+    def _train(self, real_images, generator, discriminator, encoder, random_latent_vectors, batch_size, _lambda=10):
         #############################################################################
         # Train Discriminator
         #############################################################################
@@ -98,7 +87,31 @@ class ANNOGAN(tf.keras.Model):
         grad_disc = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
         self.discriminator_optimizer.apply_gradients(zip(grad_disc, discriminator.trainable_variables))
 
-        return {'gen_loss': gen_loss, 'enc_loss': enc_loss, 'disc_loss': disc_loss, 'alpha': self.alpha}
+        #############################################################################
+        # Train Generator
+        #############################################################################
+        with tf.GradientTape() as gen_tape:
+            generated_imgs = generator(random_latent_vectors, training=True)
+            generated_output = discriminator(generated_imgs, training=False)
+            gen_loss = generator_loss(generated_output)
+
+        grad_gen = gen_tape.gradient(gen_loss, generator.trainable_variables)
+        self.generator_optimizer.apply_gradients(zip(grad_gen, generator.trainable_variables))
+
+        #############################################################################
+        # Train Encoder
+        #############################################################################
+        with tf.GradientTape() as enc_tape:
+            z_hat = encoder(real_images, training=True)
+            images_reconstructed = generator(z_hat, training=False)
+            enc_loss = encoder_loss(real_images, images_reconstructed)
+
+        grad_enc = enc_tape.gradient(enc_loss, encoder.trainable_variables)
+        self.encoder_optimizer.apply_gradients(zip(grad_enc, encoder.trainable_variables))
+
+        return {'gen_loss': gen_loss, 'enc_loss': enc_loss, 'disc_loss': disc_loss, 'alpha': self.alpha,
+                'num_imgs_seen': self.num_imgs_seen, 'fade': self.fade}
+
 
     #############################################################################
     # Expand the model architecture and add faded versions
@@ -178,4 +191,7 @@ class ANNOGAN(tf.keras.Model):
             self.E_fade = model2
 
     def reset_alpha(self):
-        self.alpha = 0
+        self.alpha.assign(0.)
+        self.num_imgs_seen.assign(0)
+        self.first_round.assign(False)
+        self.fade.assign(True)
