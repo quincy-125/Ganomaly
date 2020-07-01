@@ -45,6 +45,17 @@ def main():
                         default=4,
                         help="What image size should I start with?")
 
+    parser.add_argument("-p", "--tf_record_prefix",
+                        dest='tf_record_prefix',
+                        default='train_data-r',
+                        help="What is the string that preceeds the ## in the tfrecord file name?")
+
+    parser.add_argument("-x", "--tf_record_suffix",
+                        dest='tf_record_suffix',
+                        default='.tfrecords',
+                        help="What is the string that comes after the ## in the tfrecord file name?")
+
+
     parser.add_argument("-S", "--max_image_size",
                         dest='max_image_size',
                         default=1024,
@@ -108,7 +119,9 @@ def main():
              checkpoint_name=args.checkpoint_name,
              BATCH_SIZES=args.BATCH_SIZES,
              EPOCH_SIZES=args.EPOCH_SIZES,
-             LATENT_DEPTHS=args.LATENT_DEPTHS
+             LATENT_DEPTHS=args.LATENT_DEPTHS,
+             tf_record_prefix=args.tf_record_prefix,
+             tf_record_suffix=args.tf_record_suffix
              )
     return 0
 
@@ -117,5 +130,6 @@ if __name__ == "__main__":
     print(tf.__version__)
     print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
     print(tf.config.experimental.list_physical_devices('GPU'))
+    assert len(tf.config.experimental.list_physical_devices('GPU')) > 0,"No GPUs found"
 
     sys.exit(main())  # pragma: no cover

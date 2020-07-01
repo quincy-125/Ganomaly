@@ -11,7 +11,8 @@ def ganomaly(max_images=4, color_channels=3, number_of_images_to_fade=500000,max
              img_size=4, latent_dim=512, learning_rate=0.001, checkpoint_name='training_checkpoints',
              BATCH_SIZES={'4': 512, '8': 150, '16': 60, '32': 15, '64': 4, '128': 2, '256': 4, '512': 2, '1024': 4},
             EPOCH_SIZES = {'4': 1, '8': 1, '16': 1, '32': 1, '64': 1, '128': 5, '256': 5, '512': 5, '1024': 5},
-            LATENT_DEPTHS = {'4': 512, '8': 512, '16': 512, '32': 512, '64': 256, '128': 128, '256': 64, '512': 32, '1024': 16}
+            LATENT_DEPTHS = {'4': 512, '8': 512, '16': 512, '32': 512, '64': 256, '128': 128, '256': 64, '512': 32, '1024': 16},
+            tf_record_suffix=None, tf_record_prefix=None
              ):
 
 
@@ -47,7 +48,7 @@ def ganomaly(max_images=4, color_channels=3, number_of_images_to_fade=500000,max
         img_size = int(2 ** lod)
         batch_size = int(BATCH_SIZES[str(img_size)])
         epochs = int(EPOCH_SIZES[str(img_size)])
-        input = get_dataset(input_dir, batch_size, img_size)
+        input = get_dataset(input_dir, batch_size, img_size, prefix=tf_record_prefix, suffix=tf_record_suffix)
 
         logging.info('Beginning {}x{}x3'.format(img_size, img_size))
 

@@ -32,10 +32,10 @@ class GANMonitor(tf.keras.callbacks.Callback):
 
         for i in range(self.num_img):
             img = tf.keras.preprocessing.image.array_to_img(generated_images[i])
-            img.save(os.path.join(self.log_dir, "generated_img_" + str(i) + "_" + str(epoch) + ".png"))
+            img.save(os.path.join(self.log_dir, "generated_img_" + str(i) + "_" + str(epoch) + "_" + str(img.shape[0]) +".png"))
             img = tf.keras.preprocessing.image.array_to_img(regenerated_images[i])
-            img.save(os.path.join(self.log_dir, "regenerated_img_" + str(i) + "_" + str(epoch) + ".png"))
-
+            img.save(os.path.join(self.log_dir, "regenerated_img_" + str(i) + "_" + str(epoch) + "_" + str(img.shape[0]) + ".png"))
+        # TODO: Add image to tensorboard (https://www.tensorflow.org/tensorboard/image_summaries#visualizing_multiple_images)
 
 class AlphaUpdate(tf.keras.callbacks.Callback):
     def __init__(self, batch_size, num_imgs_to_fade=500000, **kwargs):
