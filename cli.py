@@ -1,11 +1,13 @@
 """Console script for ANNOGAN."""
 import argparse
-import logging
-import sys
-import tensorflow as tf
 import json
-from main import ganomaly
+import logging
 import os
+import sys
+
+import tensorflow as tf
+
+from main import ganomaly
 
 BATCH_SIZES = {'4': 512, '8': 150, '16': 60, '32': 15, '64': 4, '128': 2, '256': 4, '512': 2, '1024': 4}
 EPOCH_SIZES = {'4': 1, '8': 1, '16': 1, '32': 1, '64': 1, '128': 5, '256': 5, '512': 5, '1024': 5}

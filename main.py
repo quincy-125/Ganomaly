@@ -1,18 +1,22 @@
-import os
 import logging
+import os
+
 import tensorflow as tf
-from ganomaly.datasets import get_dataset
-from ganomaly.models import build_integrated_model
-from ganomaly.calbacks import tbc, cpc, GANMonitor, AlphaUpdate
-from ganomaly.ANNOGAN import ANNOGAN
 from numpy import log2
 
-def ganomaly(max_images=4, color_channels=3, number_of_images_to_fade=500000,max_image_size=1024, input_dir=None,
+from ganomaly.ANNOGAN import ANNOGAN
+from ganomaly.calbacks import tbc, cpc, GANMonitor, AlphaUpdate
+from ganomaly.datasets import get_dataset
+from ganomaly.models import build_integrated_model
+
+
+def ganomaly(max_images=4, color_channels=3, number_of_images_to_fade=500000, max_image_size=1024, input_dir=None,
              img_size=4, latent_dim=512, learning_rate=0.001, checkpoint_name='training_checkpoints',
              BATCH_SIZES={'4': 512, '8': 150, '16': 60, '32': 15, '64': 4, '128': 2, '256': 4, '512': 2, '1024': 4},
-            EPOCH_SIZES = {'4': 1, '8': 1, '16': 1, '32': 1, '64': 1, '128': 5, '256': 5, '512': 5, '1024': 5},
-            LATENT_DEPTHS = {'4': 512, '8': 512, '16': 512, '32': 512, '64': 256, '128': 128, '256': 64, '512': 32, '1024': 16},
-            tf_record_suffix=None, tf_record_prefix=None
+             EPOCH_SIZES={'4': 1, '8': 1, '16': 1, '32': 1, '64': 1, '128': 5, '256': 5, '512': 5, '1024': 5},
+             LATENT_DEPTHS={'4': 512, '8': 512, '16': 512, '32': 512, '64': 256, '128': 128, '256': 64, '512': 32,
+                            '1024': 16},
+             tf_record_suffix=None, tf_record_prefix=None
              ):
 
 

@@ -1,6 +1,7 @@
-import tensorflow as tf
 import os
-import numpy as np
+
+import tensorflow as tf
+
 
 def tbc(log_dir='logs', hist_freq=0, write_graph=True, write_images=False, update_freq='batch'):
     return tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=hist_freq, write_graph=write_graph,

@@ -1,13 +1,14 @@
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input
+import tensorflow as tf
+from tensorflow.keras.layers import Conv2D
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import Flatten
-from tensorflow.keras.layers import Reshape
-from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import Input
 from tensorflow.keras.layers import LeakyReLU
+from tensorflow.keras.layers import Reshape
+from tensorflow.keras.models import Model
+
 from ganomaly.layers import PixelNormalization, MinibatchStdev
 from ganomaly.layers import WScaleConv2DLayer as WScaleLayer
-import tensorflow as tf
 
 init = tf.keras.initializers.VarianceScaling()  # weight initialization
 const = tf.keras.constraints.MinMaxNorm(min_value=-1.0, max_value=1.0)  # weight constraint

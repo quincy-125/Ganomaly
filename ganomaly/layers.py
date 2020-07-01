@@ -1,8 +1,8 @@
-import tensorflow as tf
-from tensorflow.keras.backend import concatenate as Concatenate
-import tensorflow.keras.backend as K
-from tensorflow.keras.layers import Layer, Add, Conv2D
 import numpy as np
+import tensorflow as tf
+import tensorflow.keras.backend as K
+from tensorflow.keras.backend import concatenate as Concatenate
+from tensorflow.keras.layers import Layer, Add, Conv2D
 
 
 # weighted sum output
