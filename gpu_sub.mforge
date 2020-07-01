@@ -12,4 +12,4 @@
 #$ -l h_vmem=125G
 set -x
 
-python /research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Code/Ganomaly/main.py
+python /research/bsi/projects/staff_analysis/m087494/Flotte/Ganomaly/cli.py -d /research/bsi/projects/PI/tertiary/Hart_Steven_m087494/s211408.DigitalPathology/Quincy/Data/train_data
