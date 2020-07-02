@@ -5,7 +5,7 @@ import tensorflow as tf
 from numpy import log2
 
 from ganomaly.ANNOGAN import ANNOGAN
-from ganomaly.calbacks import tbc, cpc, GANMonitor, AlphaUpdate
+from ganomaly.callbacks import tbc, cpc, GANMonitor, AlphaUpdate
 from ganomaly.datasets import get_dataset
 from ganomaly.models import build_integrated_model
 

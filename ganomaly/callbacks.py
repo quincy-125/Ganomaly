@@ -26,16 +26,18 @@ class GANMonitor(tf.keras.callbacks.Callback):
         latent_space = self.model.E(generated_images)
         regenerated_images = self.model.G(latent_space)
 
-        generated_images *= 255
+        generated_images = tf.math.multiply(tf.math.add(generated_images, 127.5), 127.5)
         generated_images.numpy()
-        regenerated_images *= 255
+        regenerated_images = tf.math.multiply(tf.math.add(regenerated_images, 127.5), 127.5)
         regenerated_images.numpy()
 
         for i in range(self.num_img):
             img = tf.keras.preprocessing.image.array_to_img(generated_images[i])
-            img.save(os.path.join(self.log_dir, "generated_img_" + str(i) + "_" + str(epoch) + "_" + str(img.shape[0]) +".png"))
+            img.save(os.path.join(self.log_dir, "generated_img_" + str(i) + "_" + str(epoch) + "_" + str(
+                generated_images[i].shape[0]) + ".png"))
             img = tf.keras.preprocessing.image.array_to_img(regenerated_images[i])
-            img.save(os.path.join(self.log_dir, "regenerated_img_" + str(i) + "_" + str(epoch) + "_" + str(img.shape[0]) + ".png"))
+            img.save(os.path.join(self.log_dir, "regenerated_img_" + str(i) + "_" + str(epoch) + "_" + str(
+                generated_images[i].shape[0]) + ".png"))
         # TODO: Add image to tensorboard (https://www.tensorflow.org/tensorboard/image_summaries#visualizing_multiple_images)
 
 class AlphaUpdate(tf.keras.callbacks.Callback):
